@@ -1,0 +1,4 @@
+.idea/
+config/credentials.py
+*.py[co]
+*.egg-info
