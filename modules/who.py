@@ -17,9 +17,10 @@ def who(toon):
     stats = killstats(id)
 
     if alliance:
-        return "**{}**(Born {}) _{}_ {} - {}(Joined {}) of {}".format(name, age, secstatus, stats, corp, corpsince, alliance)
+        return "```{} (Born {})\n{} SecStatus with {}\nJoined {} {} ({})```".format(
+                name, age, secstatus, stats, corp, corpsince, alliance)
     else:
-        return "**{}**(Born {}) _{}_ {} - {}(Joined {})".format(name, age, secstatus, stats, corp, corpsince)
+        return "```{} (Born {})\n{} SecStatus with{}\nJoined {} {}```".format(name, age, secstatus, stats, corp, corpsince)
 
 def corpsheet(id, api):
     info = api.character_info_from_id(id.result)
@@ -39,20 +40,21 @@ def killstats(id):
     try:
         r = requests.get('https://zkillboard.com/api/stats/characterID/{}/'.format(id.result), timeout=10)
     except TimeoutError:
-        return '[N/A, N/A]'
+        return '[ERROR AT ZKILL]'
 
     data = r.json()
 
     if not data:
-        return '[0, 0]'
+        return ' no killboard data'
 
     try:
         kills = data["shipsDestroyed"]
         losses = data["shipsLost"]
-    except:
+    except KeyError:
         ''' FUCKING PANIC ON EVERY ERROR JESUS ZKILL '''
-        return '[0, 0]'
-    return '[{}, {}]'.format(kills, losses)
+        return ' no reliable killboard data'
+
+    return "{} kills and {} losses".format(kills, losses)
 
 if __name__ == "__main__":
     proper = who('Chainsaw McGinny')
