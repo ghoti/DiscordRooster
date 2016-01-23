@@ -17,9 +17,9 @@ def who(toon):
     stats = killstats(id)
 
     if alliance:
-        return "{}(Born {}) {} {} - {}(Joined {}) of {}".format(name, age, secstatus, stats, corp, corpsince, alliance)
+        return "**{}**(Born {}) _{}_ {} - {}(Joined {}) of {}".format(name, age, secstatus, stats, corp, corpsince, alliance)
     else:
-        return "{}(Born {}) {} {} - {}(Joined {})".format(name, age, secstatus, stats, corp, corpsince)
+        return "**{}**(Born {}) _{}_ {} - {}(Joined {})".format(name, age, secstatus, stats, corp, corpsince)
 
 def corpsheet(id, api):
     info = api.character_info_from_id(id.result)
