@@ -7,21 +7,28 @@ from config.credentials import FWEIGHT_KEYID, FWEIGHT_VCODE
 
 def fweight(name):
 
-    if not name:
-        return 'NEED A NAME WTF'
+    if name:
+        eve = evelink.eve.EVE()
+        id = eve.character_id_from_name(name)
 
-    eve = evelink.eve.EVE()
-    id = eve.character_id_from_name(name)
+        if not id.result:
+            return "Character not found"
 
-    if not id.result:
-        return "Character not found"
-
-    contracts, timer = get_contracts()
+        contracts, timer = get_contracts()
     
-    outstanding, completed, inprogress = get_user_contracts(id.result, contracts)
+        outstanding, completed, inprogress = get_user_contracts(id.result, contracts)
 
-    return '```Fweight Status for {}\nOutstanding: {}\nInProgress: {}\nCompleted: {}\nNew data in {}```'.format(
-            name, outstanding, inprogress, completed, arrow.get(timer).humanize())
+        return '```Fweight Status for {}\nOutstanding: {}\nInProgress: {}\nCompleted: {}\nNew data in {}```'.format(
+                name, outstanding, inprogress, completed, arrow.get(timer).humanize())
+
+    else:
+        # Get Fweight totals if no name supplied
+        contracts, timer = get_contracts()
+
+        outstanding, completed, inprogress = get_total_contracts(contracts)
+
+        return '```Fweight Totals (no name given)\nOutstanding: {}\nInProgress: {}\nCompleted: {}\nNew data in {}```'.\
+                format(outstanding, inprogress, completed, arrow.get(timer).humanize())
 
 
 def get_contracts():
@@ -47,7 +54,24 @@ def get_user_contracts(id, contracts):
 
     return outstanding, completed, inprogress
 
+
+def get_total_contracts(contracts):
+    outstanding = 0
+    completed = 0
+    inprogress = 0
+
+    for contract in contracts:
+        if contracts[contract]['status'] == 'Completed':
+            completed += 1
+        elif contracts[contract]['status'] == 'Outstanding':
+            outstanding += 1
+        elif contracts[contract]['status'] == 'InProgress':
+            inprogress += 1
+
+    return outstanding, completed, inprogress
+
 if __name__ == "__main__":
     print(fweight('chainsaw mcginny'))
     print(fweight('Nivlac Hita'))
     print(fweight('nopedoesntexist'))
+    print(fweight(name=None))

@@ -16,7 +16,7 @@ async def who(*toon: str):
     info = modules.who.who(toon)
     await bot.say(info)
 
-@bot.command(description="Get a user's contract status(es) from fweight")
+@bot.command(description="Get a user's contract status(es) from fweight (or totals if none given")
 async def fweight(*toon: str):
     '''
     Status(es) of pending fweight contracts
