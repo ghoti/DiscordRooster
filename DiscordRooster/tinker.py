@@ -1,6 +1,7 @@
 from discord.ext import commands
 
 from config.credentials import LOGIN_EMAIL, LOGIN_PASS
+import modules.fweight
 import modules.who
 
 bot = commands.Bot(command_prefix='!', description='Rooster knows all...')
@@ -15,6 +16,15 @@ async def who(*toon: str):
     info = modules.who.who(toon)
     await bot.say(info)
 
+@bot.command(description="Get a user's contract status(es) from fweight")
+async def fweight(*toon: str):
+    '''
+    Status(es) of pending fweight contracts
+    '''
+    toon = ' '.join(toon)
+    status = modules.fweight.fweight(toon)
+    await bot.say(status)
+
 @bot.event
 async def on_ready():
     print('Logged in as')
@@ -22,4 +32,8 @@ async def on_ready():
     print(bot.user.id)
     print('------')
 
-bot.run(LOGIN_EMAIL, LOGIN_PASS)
+while True:
+    try:
+        bot.run(LOGIN_EMAIL, LOGIN_PASS)
+    except:
+        print("Bot killed connection, restarting")
