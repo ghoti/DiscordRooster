@@ -18,9 +18,9 @@ def fweight(name):
 
     contracts, timer = get_contracts()
     
-    completed, outstanding, inprogress = get_user_contracts(id.result, contracts)
+    outstanding, completed, inprogress = get_user_contracts(id.result, contracts)
 
-    return '```Fweight Statuss for {}\nOutstanding: {}\nInProgress: {}\nCompleted: {}\nNew data in {}```'.format(
+    return '```Fweight Status for {}\nOutstanding: {}\nInProgress: {}\nCompleted: {}\nNew data in {}```'.format(
             name, outstanding, inprogress, completed, arrow.get(timer).humanize())
 
 
@@ -37,7 +37,6 @@ def get_user_contracts(id, contracts):
     inprogress = 0
 
     for contract in contracts:
-        print(contracts[contract]['status'])
         if contracts[contract]['issuer'] == id:
             if contracts[contract]['status'] == 'Completed':
                 completed += 1
