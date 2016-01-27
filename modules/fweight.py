@@ -5,8 +5,8 @@ import evelink.eve
 
 from config.credentials import FWEIGHT_KEYID, FWEIGHT_VCODE
 
-def fweight(name):
 
+def fweight(name):
     if name:
         eve = evelink.eve.EVE()
         id = eve.character_id_from_name(name)
