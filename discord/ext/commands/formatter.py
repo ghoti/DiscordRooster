@@ -65,17 +65,17 @@ class HelpFormatter:
     show_hidden : bool
         Dictates if hidden commands should be shown in the output.
         Defaults to ``False``.
-    show_check_faiure : bool
+    show_check_failure : bool
         Dictates if commands that have their :attr:`Command.checks` failed
         shown. Defaults to ``False``.
     width : int
         The maximum number of characters that fit in a line.
         Defaults to 80.
     """
-    def __init__(self, show_hidden=False, show_check_faiure=False, width=80):
+    def __init__(self, show_hidden=False, show_check_failure=False, width=80):
         self.wrapper = textwrap.TextWrapper(width=width)
         self.show_hidden = show_hidden
-        self.show_check_faiure = show_check_faiure
+        self.show_check_failure = show_check_failure
 
     def has_subcommands(self):
         """bool : Specifies if the command has subcommands."""
@@ -104,7 +104,9 @@ class HelpFormatter:
         the largest subcommand name."""
         try:
             commands = self.command.commands if not self.is_cog() else self.context.bot.commands
-            return max(map(lambda c: len(c.name), commands.values()))
+            if commands:
+                return max(map(lambda c: len(c.name), commands.values()))
+            return 0
         except AttributeError:
             return len(self.command.name)
 
@@ -149,23 +151,29 @@ class HelpFormatter:
         params = cmd.clean_params
         if len(params) > 0:
             for name, param in params.items():
-                cleaned_name = name.replace('_', '-')
                 if param.default is not param.empty:
-                    result.append('{0}={1}'.format(cleaned_name, param.default))
+                    # We don't want None or '' to trigger the [name=value] case and instead it should
+                    # do [name] since [name=None] or [name=] are not exactly useful for the user.
+                    should_print = param.default if isinstance(param.default, str) else param.default is not None
+                    if should_print:
+                        result.append('[{}={}]'.format(name, param.default))
+                    else:
+                        result.append('[{}]'.format(name))
                 elif param.kind == param.VAR_POSITIONAL:
-                    result.append(cleaned_name + '...')
+                    result.append('[{}...]'.format(name))
                 else:
-                    result.append(cleaned_name)
+                    result.append('<{}>'.format(name))
 
         return ' '.join(result)
 
     def get_ending_note(self):
-        return "Type {0}help command for more info on a command.\n" \
-               "You can also type {0}help category for more info on a category.".format(self.clean_prefix)
+        command_name = self.context.invoked_with
+        return "Type {0}{1} command for more info on a command.\n" \
+               "You can also type {0}{1} category for more info on a category.".format(self.clean_prefix, command_name)
 
     def filter_command_list(self):
         """Returns a filtered list of commands based on the two attributes
-        provided, :attr:`show_check_faiure` and :attr:`show_hidden`. Also
+        provided, :attr:`show_check_failure` and :attr:`show_hidden`. Also
         filters based on if :meth:`is_cog` is valid.
 
         Returns
@@ -184,7 +192,7 @@ class HelpFormatter:
             if cmd.hidden and not self.show_hidden:
                 return False
 
-            if self.show_check_faiure:
+            if self.show_check_failure:
                 # we don't wanna bother doing the checks if the user does not
                 # care about them, so just return true.
                 return True

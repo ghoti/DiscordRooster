@@ -52,8 +52,10 @@ async def killwatch():
         return
     await asyncio.sleep(1)
     if not bot.is_closed:
-        await bot.send_message(channel, "**KILL ALERT** is running! {:,}ISK Threshhold <BETA>".format(VALUE))
+
+        #await bot.send_message(channel, "**KILL ALERT** is running! {:,}ISK Threshhold <BETA>".format(VALUE))
         while True:
+            bot.keep_alive_handler(interval=5   )
             r = requests.get('http://redisq.zkillboard.com/listen.php')
             stream = r.json()
             try:
@@ -91,4 +93,5 @@ while True:
             loop.run_until_complete(bot.close())
         finally:
             loop.close()
+            bot.close()
 

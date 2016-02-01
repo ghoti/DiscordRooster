@@ -48,6 +48,8 @@ import struct
 import threading
 import subprocess
 import shlex
+import functools
+import datetime
 
 log = logging.getLogger(__name__)
 
@@ -62,7 +64,8 @@ class StreamPlayer(threading.Thread):
         self.frame_size = encoder.frame_size
         self.player = player
         self._end = threading.Event()
-        self._paused = threading.Event()
+        self._resumed = threading.Event()
+        self._resumed.set() # we are not paused
         self._connected = connected
         self.after = after
         self.delay = encoder.frame_length / 1000.0
@@ -71,8 +74,10 @@ class StreamPlayer(threading.Thread):
         self.loops = 0
         self._start = time.time()
         while not self._end.is_set():
-            if self._paused.is_set():
-                continue
+            # are we paused?
+            if not self._resumed.is_set():
+                # wait until we aren't
+                self._resumed.wait()
 
             if not self._connected.is_set():
                 self.stop()
@@ -98,15 +103,15 @@ class StreamPlayer(threading.Thread):
                 pass
 
     def pause(self):
-        self._paused.set()
+        self._resumed.clear()
 
     def resume(self):
         self.loops = 0
         self._start = time.time()
-        self._paused.clear()
+        self._resumed.set()
 
     def is_playing(self):
-        return not self._paused.is_set() and not self.is_done()
+        return self._resumed.is_set() and not self.is_done()
 
     def is_done(self):
         return not self._connected.is_set() or self._end.is_set()
@@ -334,7 +339,7 @@ class VoiceClient:
         struct.pack_into('>I', buff, 8, self.ssrc)
         return buff
 
-    def create_ffmpeg_player(self, filename, *, use_avconv=False, pipe=False, options=None, after=None):
+    def create_ffmpeg_player(self, filename, *, use_avconv=False, pipe=False, options=None, headers=None, after=None):
         """Creates a stream player for ffmpeg that launches in a separate thread to play
         audio.
 
@@ -369,6 +374,8 @@ class VoiceClient:
             to the stdin of ffmpeg.
         options: str
             Extra command line flags to pass to ``ffmpeg``.
+        headers: dict
+            HTTP headers dictionary to pass to ``-headers`` command line option
         after : callable
             The finalizer that is called after the stream is done being
             played. All exceptions the finalizer throws are silently discarded.
@@ -386,8 +393,13 @@ class VoiceClient:
         """
         command = 'ffmpeg' if not use_avconv else 'avconv'
         input_name = '-' if pipe else shlex.quote(filename)
-        cmd = command + ' -i {} -f s16le -ar {} -ac {} -loglevel warning'
-        cmd = cmd.format(input_name, self.encoder.sampling_rate, self.encoder.channels)
+        headers_arg = ""
+        if isinstance(headers, dict):
+            for key, value in headers.items():
+                headers_arg += "{}: {}\r\n".format(key, value)
+            headers_arg = ' -headers ' + shlex.quote(headers_arg)
+        cmd = command + '{} -i {} -f s16le -ar {} -ac {} -loglevel warning'
+        cmd = cmd.format(headers_arg, input_name, self.encoder.sampling_rate, self.encoder.channels)
 
         if isinstance(options, str):
             cmd = cmd + ' ' + options
@@ -405,8 +417,11 @@ class VoiceClient:
             raise ClientException('Popen failed: {0.__name__} {1}'.format(type(e), str(e))) from e
 
 
-    def create_ytdl_player(self, url, *, options=None, use_avconv=False, after=None):
-        """Creates a stream player for youtube or other services that launches
+    @asyncio.coroutine
+    def create_ytdl_player(self, url, *, ytdl_options=None, **kwargs):
+        """|coro|
+
+        Creates a stream player for youtube or other services that launches
         in a separate thread to play the audio.
 
         The player uses the ``youtube_dl`` python library to get the information
@@ -418,7 +433,38 @@ class VoiceClient:
         variable in order for this to work.
 
         The operations that can be done on the player are the same as those in
-        :meth:`create_stream_player`.
+        :meth:`create_stream_player`. The player has been augmented and enhanced
+        to have some info extracted from the URL. If youtube-dl fails to extract
+        the information then the attribute is ``None``. The ``yt``, ``url``, and
+        ``download_url`` attributes are always available.
+
+        +---------------------+---------------------------------------------------------+
+        |      Operation      |                       Description                       |
+        +=====================+=========================================================+
+        | player.yt           | The `YoutubeDL <ytdl>` instance.                        |
+        +---------------------+---------------------------------------------------------+
+        | player.url          | The URL that is currently playing.                      |
+        +---------------------+---------------------------------------------------------+
+        | player.download_url | The URL that is currently being downloaded to ffmpeg.   |
+        +---------------------+---------------------------------------------------------+
+        | player.title        | The title of the audio stream.                          |
+        +---------------------+---------------------------------------------------------+
+        | player.description  | The description of the audio stream.                    |
+        +---------------------+---------------------------------------------------------+
+        | player.uploader     | The uploader of the audio stream.                       |
+        +---------------------+---------------------------------------------------------+
+        | player.upload_date  | A datetime.date object of when the stream was uploaded. |
+        +---------------------+---------------------------------------------------------+
+        | player.duration     | The duration of the audio in seconds.                   |
+        +---------------------+---------------------------------------------------------+
+        | player.likes        | How many likes the audio stream has.                    |
+        +---------------------+---------------------------------------------------------+
+        | player.dislikes     | How many dislikes the audio stream has.                 |
+        +---------------------+---------------------------------------------------------+
+        | player.is_live      | Checks if the audio stream is currently livestreaming.  |
+        +---------------------+---------------------------------------------------------+
+        | player.views        | How many views the audio stream has.                    |
+        +---------------------+---------------------------------------------------------+
 
         .. _ytdl: https://github.com/rg3/youtube-dl/blob/master/youtube_dl/YoutubeDL.py#L117-L265
 
@@ -427,8 +473,8 @@ class VoiceClient:
 
         Basic usage: ::
 
-            voice = yield from client.join_voice_channel(channel)
-            player = voice.create_ytdl_player('https://www.youtube.com/watch?v=d62TYemN6MQ')
+            voice = await client.join_voice_channel(channel)
+            player = await voice.create_ytdl_player('https://www.youtube.com/watch?v=d62TYemN6MQ')
             player.start()
 
         Parameters
@@ -436,15 +482,12 @@ class VoiceClient:
         url : str
             The URL that ``youtube_dl`` will take and download audio to pass
             to ``ffmpeg`` or ``avconv`` to convert to PCM bytes.
-        options : dict
+        ytdl_options : dict
             A dictionary of options to pass into the ``YoutubeDL`` instance.
             See `the documentation <ydl>`_ for more details.
-        use_avconv: bool
-            Use ``avconv`` instead of ``ffmpeg``. Passes the appropriate
-            flags to ``youtube-dl`` as well.
-        after : callable
-            The finalizer that is called after the stream is done being
-            played. All exceptions the finalizer throws are silently discarded.
+        \*\*kwargs
+            The rest of the keyword arguments are forwarded to
+            :func:`create_ffmpeg_player`.
 
         Raises
         -------
@@ -454,23 +497,57 @@ class VoiceClient:
         Returns
         --------
         StreamPlayer
-            A stream player with specific operations.
-            See :meth:`create_stream_player`.
+            An augmented StreamPlayer that uses ffmpeg.
+            See :meth:`create_stream_player` for base operations.
         """
         import youtube_dl
 
+        use_avconv = kwargs.get('use_avconv', False)
         opts = {
-            'format': 'webm[abr>0]' if 'youtube' in url else 'best',
+            'format': 'webm[abr>0]/bestaudio/best',
             'prefer_ffmpeg': not use_avconv
         }
 
-        if options is not None and isinstance(options, dict):
-            opts.update(options)
+        if ytdl_options is not None and isinstance(ytdl_options, dict):
+            opts.update(ytdl_options)
 
         ydl = youtube_dl.YoutubeDL(opts)
-        info = ydl.extract_info(url, download=False)
+        func = functools.partial(ydl.extract_info, url, download=False)
+        info = yield from self.loop.run_in_executor(None, func)
         log.info('playing URL {}'.format(url))
-        return self.create_ffmpeg_player(info['url'], use_avconv=use_avconv, after=after)
+        download_url = info['url']
+        player = self.create_ffmpeg_player(download_url, **kwargs)
+
+        # set the dynamic attributes from the info extraction
+        player.download_url = download_url
+        player.url = url
+        player.yt = ydl
+        player.views = info.get('view_count')
+        player.is_live = bool(info.get('is_live'))
+        player.likes = info.get('like_count')
+        player.dislikes = info.get('dislike_count')
+        player.duration = info.get('duration')
+        player.uploader = info.get('uploader')
+
+        is_twitch = 'twitch' in url
+        if is_twitch:
+            # twitch has 'title' and 'description' sort of mixed up.
+            player.title = info.get('description')
+            player.description = None
+        else:
+            player.title = info.get('title')
+            player.description = info.get('description')
+
+        # upload date handling
+        date = info.get('upload_date')
+        if date:
+            try:
+                date = datetime.datetime.strptime(date, '%Y%M%d').date()
+            except ValueError:
+                date = None
+
+        player.upload_date = date
+        return player
 
     def encoder_options(self, *, sample_rate, channels=2):
         """Sets the encoder options for the OpusEncoder.

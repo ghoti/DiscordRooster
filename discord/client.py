@@ -39,7 +39,7 @@ from .errors import *
 from .state import ConnectionState
 from .permissions import Permissions
 from . import utils
-from .enums import ChannelType, ServerRegion
+from .enums import ChannelType, ServerRegion, Status
 from .voice_client import VoiceClient
 from .iterators import LogsFromIterator
 
@@ -146,6 +146,11 @@ class Client:
     def _get_cache_filename(self, email):
         filename = hashlib.md5(email.encode('utf-8')).hexdigest()
         return os.path.join(tempfile.gettempdir(), 'discord_py', filename)
+
+    @asyncio.coroutine
+    def _send_ws(self, data):
+        self.dispatch('socket_raw_send', data)
+        yield from self.ws.send(data)
 
     @asyncio.coroutine
     def _login_via_cache(self, email, password):
@@ -282,7 +287,7 @@ class Client:
 
                 msg = 'Keeping websocket alive with timestamp {}'
                 log.debug(msg.format(payload['d']))
-                yield from self.ws.send(utils.to_json(payload))
+                yield from self._send_ws(utils.to_json(payload))
                 yield from asyncio.sleep(interval)
         except asyncio.CancelledError:
             pass
@@ -302,6 +307,8 @@ class Client:
 
     @asyncio.coroutine
     def received_message(self, msg):
+        self.dispatch('socket_raw_receive', msg)
+
         if isinstance(msg, bytes):
             msg = zlib.decompress(msg, 15, 10490000) # This is 10 MiB
             msg = msg.decode('utf-8')
@@ -386,7 +393,7 @@ class Client:
                 }
             }
 
-            yield from self.ws.send(utils.to_json(payload))
+            yield from self._send_ws(utils.to_json(payload))
             log.info('sent the initial payload to create the websocket')
 
     @asyncio.coroutine
@@ -415,7 +422,7 @@ class Client:
         }
 
         log.info('sending reconnection frame to websocket {}'.format(payload))
-        yield from self.ws.send(utils.to_json(payload))
+        yield from self._send_ws(utils.to_json(payload))
 
     # login state management
 
@@ -1035,10 +1042,10 @@ class Client:
         try:
             # attempt to open the file and send the request
             with open(fp, 'rb') as f:
-                files.add_field('file', f, filename=filename)
+                files.add_field('file', f, filename=filename, content_type='application/octet-stream')
                 response = yield from aiohttp.post(url, data=files, headers=headers, loop=self.loop)
         except TypeError:
-            files.add_field('file', fp, filename=filename)
+            files.add_field('file', fp, filename=filename, content_type='application/octet-stream')
             response = yield from aiohttp.post(url, data=files, headers=headers, loop=self.loop)
 
         log.debug(request_logging_format.format(method='POST', response=response))
@@ -1450,19 +1457,23 @@ class Client:
             raise InvalidArgument('game must be of Game or None')
 
         idle_since = None if idle == False else int(time.time() * 1000)
-        game = game and {'name': game.name}
+        sent_game = game and {'name': game.name}
 
         payload = {
             'op': 3,
             'd': {
-                'game': game,
+                'game': sent_game,
                 'idle_since': idle_since
             }
         }
 
         sent = utils.to_json(payload)
         log.debug('Sending "{}" to change status'.format(sent))
-        yield from self.ws.send(sent)
+        yield from self._send_ws(sent)
+        for server in self.servers:
+            server.me.game = game
+            status = Status.idle if idle_since else Status.online
+            server.me.status = status
 
     # Channel management
 
@@ -1695,6 +1706,9 @@ class Client:
             The new channel that is the AFK channel. Could be ``None`` for no AFK channel.
         afk_timeout : int
             The number of seconds until someone is moved to the AFK channel.
+        owner : :class:`Member`
+            The new owner of the server to transfer ownership to. Note that you must
+            be owner of the server to do this.
 
         Raises
         -------
@@ -1706,7 +1720,8 @@ class Client:
             Editing the server failed.
         InvalidArgument
             The image format passed in to ``icon`` is invalid. It must be
-            PNG or JPG.
+            PNG or JPG. This is also raised if you are not the owner of the
+            server and request an ownership transfer.
         """
 
         try:
@@ -1731,6 +1746,12 @@ class Client:
             afk_channel = server.afk_channel
 
         payload['afk_channel'] = getattr(afk_channel, 'id', None)
+
+        if 'owner' in fields:
+            if server.owner != server.me:
+                raise InvalidArgument('To transfer ownership you must be the owner of the server.')
+
+            payload['owner_id'] = fields['owner'].id
 
         url = '{0}/{1.id}'.format(endpoints.SERVERS, server)
         r = yield from aiohttp.patch(url, headers=self.headers, data=utils.to_json(payload), loop=self.loop)
@@ -2421,7 +2442,7 @@ class Client:
             }
         }
 
-        yield from self.ws.send(utils.to_json(payload))
+        yield from self._send_ws(utils.to_json(payload))
         yield from asyncio.wait_for(self._session_id_found.wait(), timeout=5.0, loop=self.loop)
         yield from asyncio.wait_for(self._voice_data_found.wait(), timeout=5.0, loop=self.loop)
 
