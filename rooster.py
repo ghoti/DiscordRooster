@@ -5,13 +5,23 @@ from discord.ext import commands
 
 from config.credentials import LOGIN_EMAIL, LOGIN_PASS
 import modules.fweight
+import modules.time
 import modules.who
 
 ALLIANCE = 99002172
-#ALLIANCE = 1354830081
+#ALLIANCE = 99002775
 VALUE = 100000000
 
 bot = commands.Bot(command_prefix='!', description='Rooster knows all...')
+
+@bot.command(description="Get's the current EVE Time")
+async def time():
+    '''
+    Shows the current time in UTC (EVE TIME)
+
+    Should probably add options, and formatting
+    '''
+    await bot.say(modules.time.time())
 
 
 @bot.command(description = "info about a player.  name, age, sec status, stats, and corp info")
@@ -51,32 +61,29 @@ async def killwatch():
         print('that channel isnt on the server, background task not running')
         return
     await asyncio.sleep(1)
-    if not bot.is_closed:
-
+    while not bot.is_closed:
+        await asyncio.sleep(5)
         #await bot.send_message(channel, "**KILL ALERT** is running! {:,}ISK Threshhold <BETA>".format(VALUE))
-        while True:
-            bot.keep_alive_handler(interval=5   )
+        try:
             r = requests.get('http://redisq.zkillboard.com/listen.php')
             stream = r.json()
-            try:
-                for kill in stream:
-                    if 'alliance' in stream[kill]['killmail']['victim']:
-                        if stream[kill]['killmail']['victim']['alliance']['id'] == ALLIANCE:
-                            if stream[kill]['zkb']['totalValue'] >= VALUE:
-                                await bot.send_message(channel, "**KILL ALERT**\nhttps://zkillboard.com/kill/{}/".format(
-                                                                stream[kill]['killID']))
-                                break
-                    for attacker in stream[kill]['killmail']['attackers']:
-                        if 'alliance' in attacker:
-                            if attacker['alliance']['id'] == ALLIANCE:
-                                if stream[kill]['zkb']['totalValue'] >= VALUE:
-                                    await bot.send_message(channel, "**KILL ALERT**\nhttps://zkillboard.com/kill/{}/".
-                                                                    format(stream[kill]['killID']))
-                                break
-            except TypeError:
-                continue
-            await asyncio.sleep(5)
-
+        except Exception:
+            continue
+        if stream['package']:
+            #for kill in stream['package']:
+            if 'alliance' in stream['package']['killmail']['victim']:
+                if stream['package']['killmail']['victim']['alliance']['id'] == ALLIANCE:
+                    if stream['package']['zkb']['totalValue'] >= VALUE:
+                        await bot.send_message(channel, "**KILL ALERT**\nhttps://zkillboard.com/kill/{}/".format(
+                                                        stream['package']['killID']))
+                        break
+            for attacker in stream['package']['killmail']['attackers']:
+                if 'alliance' in attacker:
+                    if attacker['alliance']['id'] == ALLIANCE:
+                        if stream['package']['zkb']['totalValue'] >= VALUE:
+                            await bot.send_message(channel, "**KILL ALERT**\nhttps://zkillboard.com/kill/{}/".
+                                                            format(stream['package']['killID']))
+                            break
 
 loop = asyncio.get_event_loop()
 
@@ -87,9 +94,11 @@ while True:
         print('bot isnt on, connecting')
         try:
             loop.create_task(killwatch())
-
             loop.run_until_complete(bot.run(LOGIN_EMAIL, LOGIN_PASS))
+            #loop.run_forever(bot.run(LOGIN_EMAIL, LOGIN_PASS))
         except Exception:
+            loop.run_until_complete(bot.close())
+        except:
             loop.run_until_complete(bot.close())
         finally:
             loop.close()
