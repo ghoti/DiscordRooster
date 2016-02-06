@@ -24,7 +24,7 @@ async def time():
     await bot.say(modules.time.time())
 
 
-@bot.command(description = "info about a player.  name, age, sec status, stats, and corp info")
+@bot.command(description = "info about a player.  name, age, sec status, stats, corp info, and last kb activity")
 async def who(*toon: str):
     '''
     Basic Public info about a given EVE Character
@@ -62,7 +62,7 @@ async def killwatch():
         return
     await asyncio.sleep(1)
     while not bot.is_closed:
-        await asyncio.sleep(5)
+        await asyncio.sleep(1)
         #await bot.send_message(channel, "**KILL ALERT** is running! {:,}ISK Threshhold <BETA>".format(VALUE))
         try:
             r = requests.get('http://redisq.zkillboard.com/listen.php')

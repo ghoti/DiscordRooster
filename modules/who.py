@@ -25,12 +25,14 @@ def who(toon):
         name, corp, corpsince, alliance, secstatus, age = corpsheet(id, api)
         stats = killstats(id)
 
+        lastseen = activity(id)
+
         if alliance:
-            return "```{} (Born {})\n{} SecStatus with {}\nJoined {} {} ({})```".format(
-                    name, age, secstatus, stats, corp, corpsince, alliance)
+            return "```{} (Born {})\n{} SecStatus with {}\nJoined {} {} ({})\nLast seen {}```".format(
+                    name, age, secstatus, stats, corp, corpsince, alliance, lastseen)
         else:
-            return "```{} (Born {})\n{} SecStatus with {}\nJoined {} {}```".format(
-                    name, age, secstatus, stats, corp, corpsince)
+            return "```{} (Born {})\n{} SecStatus with {}\nJoined {}{}\nLast seen {}```".format(
+                    name, age, secstatus, stats, corp, corpsince, lastseen)
     except evelink.api.APIError:
         try:
             #and here we fail if we supplied an alliance name, oof
@@ -40,7 +42,14 @@ def who(toon):
             return "Seems you supplied an alliance name, soonTM"
 
 
-
+def activity(id):
+    try:
+        zkill = requests.get("https://zkillboard.com/api/kills/characterID/{}/".format(id.result))
+        zkill = zkill.json()
+        lastkill = arrow.get(zkill[0]['killTime'], 'YYYY-MM-DD HH:mm:ss')
+        return lastkill.humanize()
+    except:
+        return "Never"
 
 
 def corpsheet(id, api):
