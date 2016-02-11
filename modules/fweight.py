@@ -18,7 +18,7 @@ def fweight(name):
     
         outstanding, completed, inprogress = get_user_contracts(id.result, contracts)
 
-        return '```Fweight Status for {}\nOutstanding: {}\nInProgress: {}\nCompleted: {}\nNew data in {}```'.format(
+        return '```Fweight Status for {}\nOutstanding: {}\nInProgress: {}\nCompleted: {}\nNew data {}```'.format(
                 name, outstanding, inprogress, completed, arrow.get(timer).humanize())
 
     else:
