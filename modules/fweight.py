@@ -27,7 +27,7 @@ def fweight(name):
 
         outstanding, completed, inprogress = get_total_contracts(contracts)
 
-        return '```Fweight Totals (no name given)\nOutstanding: {}\nInProgress: {}\nCompleted: {}\nNew data in {}```'.\
+        return '```Fweight Totals (no name given)\nOutstanding: {}\nInProgress: {}\nCompleted: {}\nNew data {}```'.\
                 format(outstanding, inprogress, completed, arrow.get(timer).humanize())
 
 
