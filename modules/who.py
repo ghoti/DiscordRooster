@@ -31,7 +31,7 @@ def who(toon):
             return "```{} (Born {})\n{} SecStatus with {}\nJoined {} {} ({})\nLast seen {}```".format(
                     name, age, secstatus, stats, corp, corpsince, alliance, lastseen)
         else:
-            return "```{} (Born {})\n{} SecStatus with {}\nJoined {}{}\nLast seen {}```".format(
+            return "```{} (Born {})\n{} SecStatus with {}\nJoined {} {}\nLast seen {}```".format(
                     name, age, secstatus, stats, corp, corpsince, lastseen)
     except evelink.api.APIError:
         try:
