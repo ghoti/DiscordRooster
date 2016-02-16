@@ -18,7 +18,7 @@ def fweight(name):
     
         outstanding, completed, inprogress = get_user_contracts(id.result, contracts)
 
-        return '```Fweight Status for {}\nOutstanding: {}\nInProgress: {}\nCompleted: {}\nNew data {}```'.format(
+        return '```Fweight Status for {} for the past Month\nOutstanding: {}\nInProgress: {}\nCompleted: {}\nNew data {}```'.format(
                 name, outstanding, inprogress, completed, arrow.get(timer).humanize())
 
     else:
@@ -27,7 +27,7 @@ def fweight(name):
 
         outstanding, completed, inprogress = get_total_contracts(contracts)
 
-        return '```Fweight Totals (no name given)\nOutstanding: {}\nInProgress: {}\nCompleted: {}\nNew data {}```'.\
+        return '```Fweight Totals (no name given) 1 Month Limit\nOutstanding: {}\nInProgress: {}\nCompleted: {}\nNew data {}```'.\
                 format(outstanding, inprogress, completed, arrow.get(timer).humanize())
 
 
