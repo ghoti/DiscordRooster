@@ -46,7 +46,6 @@ def get_user_contracts(id, contracts):
     now = arrow.utcnow().replace(month=1)
     for contract in contracts:
         if contracts[contract]['issuer'] == id and now < arrow.get(str(contracts[contract]['issued'])):
-            print(arrow.get(contracts[contract]['issued']).humanize())
             if contracts[contract]['status'] == 'Completed':
                 completed += 1
             elif contracts[contract]['status'] == 'Outstanding':
