@@ -1,7 +1,7 @@
+import aiohttp
 import asyncio
 import logging
 import discord
-import requests
 from discord.ext import commands
 
 from config.credentials import LOGIN_EMAIL, LOGIN_PASS
@@ -10,8 +10,9 @@ import modules.time
 import modules.who
 
 ALLIANCE = 99002172
-#ALLIANCE = 99002775
+#ALLIANCE = 99004425
 VALUE = 100000000
+BIGVALUE = 25000000000
 
 bot = commands.Bot(command_prefix='!', description='Rooster knows all...')
 
@@ -46,34 +47,20 @@ async def fweight(*toon: str):
     status = modules.fweight.fweight(toon)
     await bot.say(status)
 
-@bot.event
-async def on_ready():
-    logging.info('Logged in as')
-    logging.info(bot.user.name)
-    logging.debug(bot.user.id)
-    logging.debug('------')
-
-
 async def killwatch():
     await bot.wait_until_ready()
-    chans = {}
-    for i in bot.get_all_channels():
-        chans[i.name] = i.id
-    try:
-        channel = discord.Object(id=chans['alliance'])
-    except Exception:
-        logging.warning('That channel isnt on the server, background task not running')
+
+    channel = discord.utils.get(bot.get_all_channels(), name='general')
+    if not channel:
+        logging.warning('That Channel isnt on the server, killwatch not running')
         return
-    await asyncio.sleep(1)
+
+    #await bot.send_message(channel, "**KILL ALERT** is running! {:,}ISK Alliance Threshhold:{:,} Big isk Threshold <BETA>".format(VALUE, BIGVALUE))
+
     while not bot.is_closed:
-        #await asyncio.sleep(1)
-        #await bot.send_message(channel, "**KILL ALERT** is running! {:,}ISK Threshhold <BETA>".format(VALUE))
-        try:
-            r = await requests.get('http://redisq.zkillboard.com/listen.php', timeout=5)
-            stream = r.json()
-        except Exception:
-            await asyncio.sleep(10)
-            continue
+        with aiohttp.ClientSession() as session:
+            async with session.get('http://redisq.zkillboard.com/listen.php') as resp:
+                stream = await resp.json()
         if stream['package']:
             if 'alliance' in stream['package']['killmail']['victim']:
                 if stream['package']['killmail']['victim']['alliance']['id'] == ALLIANCE:
@@ -88,24 +75,30 @@ async def killwatch():
                             await bot.send_message(channel, "**KILL ALERT**\nhttps://zkillboard.com/kill/{}/".
                                                             format(stream['package']['killID']))
                             break
+            if stream['package']['zkb']['totalValue'] >= BIGVALUE:
+                await bot.send_message(channel, "**BIG KILL ALERT**\nhttps://zkillboard.com/kill/{}/".
+                                       format(stream['package']['killID']))
+
+@bot.event
+async def on_ready():
+    logging.info('Logged in as')
+    logging.info(bot.user.name)
+    logging.debug(bot.user.id)
+    logging.debug('------')
+
 
 loop = asyncio.get_event_loop()
 
 while True:
-    if bot.is_logged_in:
-        continue
-    else:
-        logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
-        logging.info('bot isnt on, connecting')
-        try:
-            loop.create_task(killwatch())
-            loop.run_until_complete(bot.run(LOGIN_EMAIL, LOGIN_PASS))
-            #loop.run_forever(bot.run(LOGIN_EMAIL, LOGIN_PASS))
-        except Exception:
-            loop.run_until_complete(bot.close())
-        except:
-            loop.run_until_complete(bot.close())
-        finally:
-            loop.close()
-            bot.close()
+    logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
+    logging.info('bot isnt on, connecting')
+    try:
+        loop.create_task(killwatch())
+        loop.run_until_complete(bot.run(LOGIN_EMAIL, LOGIN_PASS))
+        # loop.run_forever(bot.run(LOGIN_EMAIL, LOGIN_PASS))
+    except Exception:
+        loop.run_until_complete(bot.close())
+    finally:
+        loop.close()
+        bot.close()
 
