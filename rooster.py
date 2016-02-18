@@ -10,7 +10,7 @@ import modules.time
 import modules.who
 
 ALLIANCE = 99002172
-#ALLIANCE = 99004425
+#ALLIANCE = 1354830081
 VALUE = 100000000
 BIGVALUE = 25000000000
 
@@ -50,7 +50,7 @@ async def fweight(*toon: str):
 async def killwatch():
     await bot.wait_until_ready()
 
-    channel = discord.utils.get(bot.get_all_channels(), name='general')
+    channel = discord.utils.get(bot.get_all_channels(), name='alliance')
     if not channel:
         logging.warning('That Channel isnt on the server, killwatch not running')
         return
@@ -67,7 +67,7 @@ async def killwatch():
                     if stream['package']['zkb']['totalValue'] >= VALUE:
                         await bot.send_message(channel, "**VICTIM ALERT**\nhttps://zkillboard.com/kill/{}/".format(
                                                         stream['package']['killID']))
-                        break
+                        continue
             for attacker in stream['package']['killmail']['attackers']:
                 if 'alliance' in attacker:
                     if attacker['alliance']['id'] == ALLIANCE:
@@ -78,6 +78,16 @@ async def killwatch():
             if stream['package']['zkb']['totalValue'] >= BIGVALUE:
                 await bot.send_message(channel, "**BIG KILL ALERT**\nhttps://zkillboard.com/kill/{}/".
                                        format(stream['package']['killID']))
+
+#Since we are the server owner, and auth gives us a new titleset everytime someone enables discord, this is an ugly
+#hack to make sure we keep our amazing title and prestige on the server.  nofuks
+async def give_admin():
+    await bot.wait_until_ready()
+    while bot.is_logged_in:
+        server = discord.utils.get(bot.servers, name='J4LP')
+        await bot.add_roles(discord.utils.get(bot.get_all_members(), name="Rooster"),
+                            discord.utils.get(server.roles, name="Supreme Overlord"))
+        await asyncio.sleep(300)
 
 @bot.event
 async def on_ready():
@@ -94,6 +104,7 @@ while True:
     logging.info('bot isnt on, connecting')
     try:
         loop.create_task(killwatch())
+        loop.create_task(give_admin())
         loop.run_until_complete(bot.run(LOGIN_EMAIL, LOGIN_PASS))
         # loop.run_forever(bot.run(LOGIN_EMAIL, LOGIN_PASS))
     except Exception:
