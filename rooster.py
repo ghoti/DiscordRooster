@@ -52,6 +52,9 @@ async def fweight(*toon: str):
 
 @bot.command(pass_context=True, description="Call a vote for 30 seconds")
 async def vote(ctx, *question : str):
+    '''
+    Call a vote for 30 seconds.  ex: !vote Is Chainsaw amazing?
+    '''
     global bb
     if bb.alive():
         await bot.say('There is already a vote in progress, wait for current vote to end first...')
@@ -75,6 +78,9 @@ async def vote(ctx, *question : str):
 
 @bot.command(pass_context=True, description="Vote 'Yes' in an active vote.")
 async def yes(ctx):
+    '''
+    Vote "Yes" in a running vote.
+    '''
     global bb
     if bb.alive():
         if bb.has_voted(ctx.message.author.name):
@@ -86,6 +92,9 @@ async def yes(ctx):
 
 @bot.command(pass_context=True, description="Vote 'No' in an active Vote")
 async def no(ctx):
+    '''
+    Vote "No" in a running vote.
+    '''
     global bb
     if bb.alive():
         if bb.has_voted(ctx.message.author.name):
