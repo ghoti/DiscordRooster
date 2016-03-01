@@ -5,6 +5,7 @@ import discord
 from discord.ext import commands
 
 from config.credentials import LOGIN_EMAIL, LOGIN_PASS
+import modules.ballotbox
 import modules.fweight
 import modules.time
 import modules.who
@@ -37,6 +38,7 @@ async def who(*toon: str):
     info = modules.who.who(toon)
     await bot.say(info)
 
+
 @bot.command(description="Get a user's contract status(es) from fweight (or totals if none given")
 async def fweight(*toon: str):
     '''
@@ -46,6 +48,51 @@ async def fweight(*toon: str):
     toon = ' '.join(toon)
     status = modules.fweight.fweight(toon)
     await bot.say(status)
+
+
+@bot.command(pass_context=True, description="Call a vote for 30 seconds")
+async def vote(ctx, *question : str):
+    global bb
+    if bb.alive():
+        await bot.say('There is already a vote in progress, wait for current vote to end first...')
+        return
+    else:
+        question = ' '.join(question).strip()
+        msg = await bot.say('{} has called a vote!\n**{}**\nVoting enabled for 30 seconds!'.format(ctx.message.author.name, question))
+        bb.started()
+        await asyncio.sleep(30)
+        await bot.edit_message(msg, '{} has called a vote!\n**{}**\nVoting has ended!!'.format(ctx.message.author.name, question))
+        bb.stopped()
+        yay, nay = bb.results()
+        if yay > nay:
+            await bot.say("Motion passes with {} votes for and {} against.".format(yay, nay))
+        elif nay > yay:
+            await bot.say("Motion fails with {} against and {} for.".format(nay, yay))
+        else:
+            await bot.say("Tied Vote!!  {} votes each".format(yay))
+        bb.reset()
+
+
+@bot.command(pass_context=True, description="Vote 'Yes' in an active vote.")
+async def yes(ctx):
+    global bb
+    if bb.alive():
+        if bb.has_voted(ctx.message.author.name):
+            bb.voteyes()
+            bb.voted(ctx.message.author.name)
+    else:
+        await bot.say("There is currently no vote in progress")
+
+
+@bot.command(pass_context=True, description="Vote 'No' in an active Vote")
+async def no(ctx):
+    global bb
+    if bb.alive():
+        if bb.has_voted(ctx.message.author.name):
+            bb.voteno()
+            bb.voted(ctx.message.author.name)
+    else:
+        await bot.say("There is currently no vote in progress")
 
 async def killwatch():
     await bot.wait_until_ready()
@@ -84,10 +131,11 @@ async def killwatch():
 async def give_admin():
     await bot.wait_until_ready()
     while bot.is_logged_in:
+        logging.debug("Giving bot overlord title")
         server = discord.utils.get(bot.servers, name='J4LP')
         await bot.add_roles(discord.utils.get(bot.get_all_members(), name="Rooster"),
                             discord.utils.get(server.roles, name="Supreme Overlord"))
-        await asyncio.sleep(300)
+        await asyncio.sleep(1800)
 
 @bot.event
 async def on_ready():
@@ -98,6 +146,7 @@ async def on_ready():
 
 
 loop = asyncio.get_event_loop()
+bb = modules.ballotbox.Ballot_Box()
 
 while True:
     logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
