@@ -51,7 +51,7 @@ import logging, traceback
 import sys, time, re, json
 import tempfile, os, hashlib
 import itertools
-import zlib
+import zlib, math
 from random import randint as random_integer
 
 PY35 = sys.version_info >= (3, 5)
@@ -122,15 +122,17 @@ class Client:
         if max_messages is None or max_messages < 100:
             max_messages = 5000
 
-        self.connection = ConnectionState(self.dispatch, max_messages)
+        self.connection = ConnectionState(self.dispatch, max_messages, loop=self.loop)
 
-        # Blame React for this
+        # Blame Jake for this
         user_agent = 'DiscordBot (https://github.com/Rapptz/discord.py {0}) Python/{1[0]}.{1[1]} aiohttp/{2}'
 
         self.headers = {
             'content-type': 'application/json',
             'user-agent': user_agent.format(library_version, sys.version_info, aiohttp.__version__)
         }
+
+        self.session = aiohttp.ClientSession(loop=self.loop)
 
         self._closed = asyncio.Event(loop=self.loop)
         self._is_logged_in = asyncio.Event(loop=self.loop)
@@ -142,6 +144,28 @@ class Client:
         self._session_id_found = asyncio.Event(loop=self.loop)
 
     # internals
+
+    def _get_all_chunks(self):
+        # a chunk has a maximum of 1000 members.
+        # we need to find out how many futures we're actually waiting for
+        large_servers = filter(lambda s: s.large, self.servers)
+        futures = []
+        for server in large_servers:
+            chunks_needed = math.ceil(server._member_count / 1000)
+            for chunk in range(chunks_needed):
+                futures.append(self.connection.receive_chunk(server.id))
+
+        return futures
+
+    @asyncio.coroutine
+    def _fill_offline(self):
+        yield from self.request_offline_members(filter(lambda s: s.large, self.servers))
+        chunks = self._get_all_chunks()
+
+        if chunks:
+            yield from asyncio.wait(chunks)
+
+        self.dispatch('ready')
 
     def _get_cache_filename(self, email):
         filename = hashlib.md5(email.encode('utf-8')).hexdigest()
@@ -247,7 +271,7 @@ class Client:
 
     @asyncio.coroutine
     def _get_gateway(self):
-        resp = yield from aiohttp.get(endpoints.GATEWAY, headers=self.headers, loop=self.loop)
+        resp = yield from self.session.get(endpoints.GATEWAY, headers=self.headers)
         if resp.status != 200:
             raise GatewayNotFound()
         data = yield from resp.json()
@@ -335,12 +359,13 @@ class Client:
             return
 
         event = msg.get('t')
+        is_ready = event == 'READY'
 
-        if event == 'READY':
+        if is_ready:
             self.connection.clear()
             self.session_id = data['session_id']
 
-        if event == 'READY' or event == 'RESUMED':
+        if is_ready or event == 'RESUMED':
             interval = data['heartbeat_interval'] / 1000.0
             self.keep_alive = utils.create_task(self.keep_alive_handler(interval), loop=self.loop)
 
@@ -362,10 +387,16 @@ class Client:
             return
 
         parser = 'parse_' + event.lower()
-        if hasattr(self.connection, parser):
-            getattr(self.connection, parser)(data)
+
+        try:
+            func = getattr(self.connection, parser)
+        except AttributeError:
+            log.info('Unhandled event {}'.format(event))
         else:
-            log.info("Unhandled event {}".format(event))
+            func(data)
+
+        if is_ready:
+            utils.create_task(self._fill_offline(), loop=self.loop)
 
     @asyncio.coroutine
     def _make_websocket(self, initial=True):
@@ -389,6 +420,7 @@ class Client:
                         '$referring_domain': ''
                     },
                     'compress': True,
+                    'large_threshold': 250,
                     'v': 3
                 }
             }
@@ -461,7 +493,7 @@ class Client:
         }
 
         data = utils.to_json(payload)
-        resp = yield from aiohttp.post(endpoints.LOGIN, data=data, headers=self.headers, loop=self.loop)
+        resp = yield from self.session.post(endpoints.LOGIN, data=data, headers=self.headers)
         log.debug(request_logging_format.format(method='POST', response=resp))
         if resp.status != 200:
             yield from resp.release()
@@ -488,7 +520,7 @@ class Client:
         """|coro|
 
         Logs out of Discord and closes all connections."""
-        response = yield from aiohttp.post(endpoints.LOGOUT, headers=self.headers, loop=self.loop)
+        response = yield from self.session.post(endpoints.LOGOUT, headers=self.headers)
         yield from response.release()
         yield from self.close()
         self._is_logged_in.clear()
@@ -498,13 +530,8 @@ class Client:
     def connect(self):
         """|coro|
 
-        Creates a websocket connection and connects to the websocket listen
+        Creates a websocket connection and lets the websocket listen
         to messages from discord.
-
-        This function is implemented using a while loop in the background.
-        If you need to run this event listening in another thread then
-        you should run it in an executor or schedule the coroutine to
-        be executed later using ``loop.create_task``.
 
         Raises
         -------
@@ -548,6 +575,8 @@ class Client:
         if self.ws.open:
             yield from self.ws.close()
 
+
+        yield from self.session.close()
         self.keep_alive.cancel()
         self._closed.set()
         self._is_ready.clear()
@@ -871,7 +900,7 @@ class Client:
         }
 
         url = '{}/channels'.format(endpoints.ME)
-        r = yield from aiohttp.post(url, data=utils.to_json(payload), headers=self.headers, loop=self.loop)
+        r = yield from self.session.post(url, data=utils.to_json(payload), headers=self.headers)
         log.debug(request_logging_format.format(method='POST', response=r))
         yield from utils._verify_successful_response(r)
         data = yield from r.json()
@@ -882,7 +911,7 @@ class Client:
 
     @asyncio.coroutine
     def _rate_limit_helper(self, name, method, url, data):
-        resp = yield from aiohttp.request(method, url, data=data, headers=self.headers, loop=self.loop)
+        resp = yield from self.session.request(method, url, data=data, headers=self.headers)
         tmp = request_logging_format.format(method=method, response=resp)
         log_fmt = 'In {}, {}'.format(name, tmp)
         log.debug(log_fmt)
@@ -982,13 +1011,13 @@ class Client:
 
         url = '{base}/{id}/typing'.format(base=endpoints.CHANNELS, id=channel_id)
 
-        response = yield from aiohttp.post(url, headers=self.headers, loop=self.loop)
+        response = yield from self.session.post(url, headers=self.headers)
         log.debug(request_logging_format.format(method='POST', response=response))
         yield from utils._verify_successful_response(response)
         yield from response.release()
 
     @asyncio.coroutine
-    def send_file(self, destination, fp, filename=None):
+    def send_file(self, destination, fp, *, filename=None, content=None, tts=False):
         """|coro|
 
         Sends a message to the destination given with the file given.
@@ -1017,6 +1046,11 @@ class Client:
             The *file-like object* or file path to send.
         filename : str
             The filename of the file. Defaults to ``fp.name`` if it's available.
+        content
+            The content of the message to send along with the file. This is
+            forced into a string by a ``str(content)`` call.
+        tts : bool
+            If the content of the message should be sent with TTS enabled.
 
         Raises
         -------
@@ -1032,21 +1066,25 @@ class Client:
         channel_id = yield from self._resolve_destination(destination)
 
         url = '{base}/{id}/messages'.format(base=endpoints.CHANNELS, id=channel_id)
-        files = aiohttp.FormData()
+        form = aiohttp.FormData()
+
+        if content is not None:
+            form.add_field('content', str(content))
+
+        form.add_field('tts', 'true' if tts else 'false')
 
         # we don't want the content-type json in this request
-        headers = {
-            'authorization': self.token
-        }
+        headers = self.headers.copy()
+        headers.pop('content-type', None)
 
         try:
             # attempt to open the file and send the request
             with open(fp, 'rb') as f:
-                files.add_field('file', f, filename=filename, content_type='application/octet-stream')
-                response = yield from aiohttp.post(url, data=files, headers=headers, loop=self.loop)
+                form.add_field('file', f, filename=filename, content_type='application/octet-stream')
+                response = yield from self.session.post(url, data=form, headers=headers)
         except TypeError:
-            files.add_field('file', fp, filename=filename, content_type='application/octet-stream')
-            response = yield from aiohttp.post(url, data=files, headers=headers, loop=self.loop)
+            form.add_field('file', fp, filename=filename, content_type='application/octet-stream')
+            response = yield from self.session.post(url, data=form, headers=headers)
 
         log.debug(request_logging_format.format(method='POST', response=response))
         yield from utils._verify_successful_response(response)
@@ -1080,7 +1118,7 @@ class Client:
         """
 
         url = '{}/{}/messages/{}'.format(endpoints.CHANNELS, message.channel.id, message.id)
-        response = yield from aiohttp.delete(url, headers=self.headers, loop=self.loop)
+        response = yield from self.session.delete(url, headers=self.headers)
         log.debug(request_logging_format.format(method='DELETE', response=response))
         yield from utils._verify_successful_response(response)
         yield from response.release()
@@ -1185,7 +1223,7 @@ class Client:
         if after:
             params['after'] = after.id
 
-        response = yield from aiohttp.get(url, params=params, headers=self.headers, loop=self.loop)
+        response = yield from self.session.get(url, params=params, headers=self.headers)
         log.debug(request_logging_format.format(method='GET', response=response))
         yield from utils._verify_successful_response(response)
         messages = yield from response.json()
@@ -1219,6 +1257,43 @@ class Client:
     # Member management
 
     @asyncio.coroutine
+    def request_offline_members(self, server):
+        """|coro|
+
+        Requests previously offline members from the server to be filled up
+        into the :attr:`Server.members` cache. This function is usually not
+        called.
+
+        When the client logs on and connects to the websocket, Discord does
+        not provide the library with offline members if the number of members
+        in the server is larger than 250. You can check if a server is large
+        if :attr:`Server.large` is ``True``.
+
+        Parameters
+        -----------
+        server : :class:`Server` or iterable
+            The server to request offline members for. If this parameter is a
+            iterable then it is interpreted as an iterator of servers to
+            request offline members for.
+        """
+
+        if hasattr(server, 'id'):
+            guild_id = server.id
+        else:
+            guild_id = [s.id for s in server]
+
+        payload = {
+            'op': 8,
+            'd': {
+                'guild_id': guild_id,
+                'query': '',
+                'limit': 0
+            }
+        }
+
+        yield from self._send_ws(utils.to_json(payload))
+
+    @asyncio.coroutine
     def kick(self, member):
         """|coro|
 
@@ -1244,7 +1319,7 @@ class Client:
         """
 
         url = '{0}/{1.server.id}/members/{1.id}'.format(endpoints.SERVERS, member)
-        response = yield from aiohttp.delete(url, headers=self.headers, loop=self.loop)
+        response = yield from self.session.delete(url, headers=self.headers)
         log.debug(request_logging_format.format(method='DELETE', response=response))
         yield from utils._verify_successful_response(response)
         yield from response.release()
@@ -1282,7 +1357,7 @@ class Client:
         }
 
         url = '{0}/{1.server.id}/bans/{1.id}'.format(endpoints.SERVERS, member)
-        response = yield from aiohttp.put(url, params=params, headers=self.headers, loop=self.loop)
+        response = yield from self.session.put(url, params=params, headers=self.headers)
         log.debug(request_logging_format.format(method='PUT', response=response))
         yield from utils._verify_successful_response(response)
         yield from response.release()
@@ -1309,7 +1384,7 @@ class Client:
         """
 
         url = '{0}/{1.id}/bans/{2.id}'.format(endpoints.SERVERS, server, user)
-        response = yield from aiohttp.delete(url, headers=self.headers, loop=self.loop)
+        response = yield from self.session.delete(url, headers=self.headers)
         log.debug(request_logging_format.format(method='DELETE', response=response))
         yield from utils._verify_successful_response(response)
         yield from response.release()
@@ -1349,7 +1424,7 @@ class Client:
             'deaf': deafen
         }
 
-        response = yield from aiohttp.patch(url, headers=self.headers, data=utils.to_json(payload), loop=self.loop)
+        response = yield from self.session.patch(url, data=utils.to_json(payload), headers=self.headers)
         log.debug(request_logging_format.format(method='PATCH', response=response))
         yield from utils._verify_successful_response(response)
         yield from response.release()
@@ -1413,7 +1488,7 @@ class Client:
             'avatar': avatar
         }
 
-        r = yield from aiohttp.patch(endpoints.ME, headers=self.headers, data=utils.to_json(payload), loop=self.loop)
+        r = yield from self.session.patch(endpoints.ME, data=utils.to_json(payload), headers=self.headers)
         log.debug(request_logging_format.format(method='PATCH', response=r))
         yield from utils._verify_successful_response(r)
 
@@ -1513,7 +1588,7 @@ class Client:
             'position': options.get('position', channel.position)
         }
 
-        r = yield from aiohttp.patch(url, headers=self.headers, data=utils.to_json(payload), loop=self.loop)
+        r = yield from self.session.patch(url, data=utils.to_json(payload), headers=self.headers)
         log.debug(request_logging_format.format(method='PATCH', response=r))
         yield from utils._verify_successful_response(r)
 
@@ -1562,7 +1637,7 @@ class Client:
         }
 
         url = '{0}/{1.id}/channels'.format(endpoints.SERVERS, server)
-        response = yield from aiohttp.post(url, headers=self.headers, data=utils.to_json(payload), loop=self.loop)
+        response = yield from self.session.post(url, data=utils.to_json(payload), headers=self.headers)
         log.debug(request_logging_format.format(method='POST', response=response))
         yield from utils._verify_successful_response(response)
 
@@ -1596,7 +1671,7 @@ class Client:
         """
 
         url = '{}/{}'.format(endpoints.CHANNELS, channel.id)
-        response = yield from aiohttp.delete(url, headers=self.headers, loop=self.loop)
+        response = yield from self.session.delete(url, headers=self.headers)
         log.debug(request_logging_format.format(method='DELETE', response=response))
         yield from utils._verify_successful_response(response)
         yield from response.release()
@@ -1609,9 +1684,10 @@ class Client:
 
         Leaves a :class:`Server`.
 
-        Warning
+        Note
         --------
-        If you are the owner of the server then it is deleted.
+        You cannot leave the server that you own, you must delete it instead
+        via :meth:`delete_server`.
 
         Parameters
         ----------
@@ -1624,8 +1700,34 @@ class Client:
             If leaving the server failed.
         """
 
+        url = '{}/@me/guilds/{.id}'.format(endpoints.USERS, server)
+        response = yield from self.session.delete(url, headers=self.headers)
+        log.debug(request_logging_format.format(method='DELETE', response=response))
+        yield from utils._verify_successful_response(response)
+        yield from response.release()
+
+    @asyncio.coroutine
+    def delete_server(self, server):
+        """|coro|
+
+        Deletes a :class:`Server`. You must be the server owner to delete the
+        server.
+
+        Parameters
+        ----------
+        server : :class:`Server`
+            The server to delete.
+
+        Raises
+        --------
+        HTTPException
+            If deleting the server failed.
+        Forbidden
+            You do not have permissions to delete the server.
+        """
+
         url = '{0}/{1.id}'.format(endpoints.SERVERS, server)
-        response = yield from aiohttp.delete(url, headers=self.headers, loop=self.loop)
+        response = yield from self.session.delete(url, headers=self.headers)
         log.debug(request_logging_format.format(method='DELETE', response=response))
         yield from utils._verify_successful_response(response)
         yield from response.release()
@@ -1674,7 +1776,7 @@ class Client:
             'region': region
         }
 
-        r = yield from aiohttp.post(endpoints.SERVERS, data=utils.to_json(payload), headers=self.headers, loop=self.loop)
+        r = yield from self.session.post(endpoints.SERVERS, data=utils.to_json(payload), headers=self.headers)
         log.debug(request_logging_format.format(method='POST', response=r))
         yield from utils._verify_successful_response(r)
         data = yield from r.json()
@@ -1754,7 +1856,7 @@ class Client:
             payload['owner_id'] = fields['owner'].id
 
         url = '{0}/{1.id}'.format(endpoints.SERVERS, server)
-        r = yield from aiohttp.patch(url, headers=self.headers, data=utils.to_json(payload), loop=self.loop)
+        r = yield from self.session.patch(url, data=utils.to_json(payload), headers=self.headers)
         log.debug(request_logging_format.format(method='PATCH', response=r))
         yield from utils._verify_successful_response(r)
         yield from r.release()
@@ -1787,7 +1889,7 @@ class Client:
         """
 
         url = '{0}/{1.id}/bans'.format(endpoints.SERVERS, server)
-        resp = yield from aiohttp.get(url, headers=self.headers, loop=self.loop)
+        resp = yield from self.session.get(url, headers=self.headers)
         log.debug(request_logging_format.format(method='GET', response=resp))
         yield from utils._verify_successful_response(resp)
         data = yield from resp.json()
@@ -1850,7 +1952,7 @@ class Client:
         }
 
         url = '{0}/{1.id}/invites'.format(endpoints.CHANNELS, destination)
-        response = yield from aiohttp.post(url, headers=self.headers, data=utils.to_json(payload), loop=self.loop)
+        response = yield from self.session.post(url, data=utils.to_json(payload), headers=self.headers)
         log.debug(request_logging_format.format(method='POST', response=response))
 
         yield from utils._verify_successful_response(response)
@@ -1891,7 +1993,7 @@ class Client:
 
         destination = self._resolve_invite(url)
         rurl = '{0}/invite/{1}'.format(endpoints.API_BASE, destination)
-        response = yield from aiohttp.get(rurl, headers=self.headers, loop=self.loop)
+        response = yield from self.session.get(rurl, headers=self.headers)
         log.debug(request_logging_format.format(method='GET', response=response))
         yield from utils._verify_successful_response(response)
         data = yield from response.json()
@@ -1925,7 +2027,7 @@ class Client:
         """
 
         url = '{0}/{1.id}/invites'.format(endpoints.SERVERS, server)
-        resp = yield from aiohttp.get(url, headers=self.headers, loop=self.loop)
+        resp = yield from self.session.get(url, headers=self.headers)
         log.debug(request_logging_format.format(method='GET', response=resp))
         yield from utils._verify_successful_response(resp)
         data = yield from resp.json()
@@ -1962,7 +2064,7 @@ class Client:
 
         destination = self._resolve_invite(invite)
         url = '{0}/invite/{1}'.format(endpoints.API_BASE, destination)
-        response = yield from aiohttp.post(url, headers=self.headers, loop=self.loop)
+        response = yield from self.session.post(url, headers=self.headers)
         log.debug(request_logging_format.format(method='POST', response=response))
         yield from utils._verify_successful_response(response)
         yield from response.release()
@@ -1993,7 +2095,7 @@ class Client:
 
         destination = self._resolve_invite(invite)
         url = '{0}/invite/{1}'.format(endpoints.API_BASE, destination)
-        response = yield from aiohttp.delete(url, headers=self.headers, loop=self.loop)
+        response = yield from self.session.delete(url, headers=self.headers)
         log.debug(request_logging_format.format(method='DELETE', response=response))
         yield from utils._verify_successful_response(response)
         yield from response.release()
@@ -2055,7 +2157,7 @@ class Client:
             'hoist': fields.get('hoist', role.hoist)
         }
 
-        r = yield from aiohttp.patch(url, data=utils.to_json(payload), headers=self.headers, loop=self.loop)
+        r = yield from self.session.patch(url, data=utils.to_json(payload), headers=self.headers)
         log.debug(request_logging_format.format(method='PATCH', response=r))
         yield from utils._verify_successful_response(r)
 
@@ -2086,7 +2188,7 @@ class Client:
         """
 
         url = '{0}/{1.id}/roles/{2.id}'.format(endpoints.SERVERS, server, role)
-        response = yield from aiohttp.delete(url, headers=self.headers, loop=self.loop)
+        response = yield from self.session.delete(url, headers=self.headers)
         log.debug(request_logging_format.format(method='DELETE', response=response))
         yield from utils._verify_successful_response(response)
         yield from response.release()
@@ -2099,7 +2201,7 @@ class Client:
             'roles': roles
         }
 
-        r = yield from aiohttp.patch(url, headers=self.headers, data=utils.to_json(payload), loop=self.loop)
+        r = yield from self.session.patch(url, data=utils.to_json(payload), headers=self.headers)
         log.debug(request_logging_format.format(method='PATCH', response=r))
         yield from utils._verify_successful_response(r)
         yield from r.release()
@@ -2221,7 +2323,7 @@ class Client:
         """
 
         url = '{0}/{1.id}/roles'.format(endpoints.SERVERS, server)
-        r = yield from aiohttp.post(url, headers=self.headers, loop=self.loop)
+        r = yield from self.session.post(url, headers=self.headers)
         log.debug(request_logging_format.format(method='POST', response=r))
         yield from utils._verify_successful_response(r)
 
@@ -2305,7 +2407,7 @@ class Client:
         else:
             raise InvalidArgument('target parameter must be either discord.Member or discord.Role')
 
-        r = yield from aiohttp.put(url, data=utils.to_json(payload), headers=self.headers, loop=self.loop)
+        r = yield from self.session.put(url, data=utils.to_json(payload), headers=self.headers)
         log.debug(request_logging_format.format(method='PUT', response=r))
         yield from utils._verify_successful_response(r)
         yield from r.release()
@@ -2339,7 +2441,7 @@ class Client:
         """
 
         url = '{0}/{1.id}/permissions/{2.id}'.format(endpoints.CHANNELS, channel, target)
-        response = yield from aiohttp.delete(url, headers=self.headers, loop=self.loop)
+        response = yield from self.session.delete(url, headers=self.headers)
         log.debug(request_logging_format.format(method='DELETE', response=response))
         yield from utils._verify_successful_response(response)
         yield from response.release()
@@ -2384,7 +2486,7 @@ class Client:
         payload = utils.to_json({
             'channel_id': channel.id
         })
-        response = yield from aiohttp.patch(url, data=payload, headers=self.headers, loop=self.loop)
+        response = yield from self.session.patch(url, data=payload, headers=self.headers)
         log.debug(request_logging_format.format(method='PATCH', response=response))
         yield from utils._verify_successful_response(response)
         yield from response.release()

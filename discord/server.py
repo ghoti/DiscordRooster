@@ -84,9 +84,10 @@ class Server(Hashable):
         Check the :func:`on_server_unavailable` and :func:`on_server_available` events.
     """
 
-    __slots__ = [ 'afk_timeout', 'afk_channel', '_members', '_channels', 'icon',
-                  'name', 'id', 'owner', 'unavailable', 'name', 'me', 'region',
-                  '_default_role', '_default_channel', 'roles' ]
+    __slots__ = ['afk_timeout', 'afk_channel', '_members', '_channels', 'icon',
+                 'name', 'id', 'owner', 'unavailable', 'name', 'me', 'region',
+                 '_default_role', '_default_channel', 'roles', '_member_count',
+                 'large', 'owner_id' ]
 
     def __init__(self, **kwargs):
         self._channels = {}
@@ -136,7 +137,14 @@ class Server(Hashable):
         return before, member
 
     def _from_data(self, guild):
+        # according to Stan, this is always available even if the guild is unavailable
+        # I don't have this guarantee when someone updates the server.
+        member_count = guild.get('member_count', None)
+        if member_count:
+            self._member_count = member_count
+
         self.name = guild.get('name')
+        self.large = guild.get('large', self._member_count > 250)
         self.region = guild.get('region')
         try:
             self.region = ServerRegion(self.region)
@@ -162,7 +170,8 @@ class Server(Hashable):
             self._add_member(member)
 
         if 'owner_id' in guild:
-            self.owner = self.get_member(guild['owner_id'])
+            self.owner_id = guild['owner_id']
+            self.owner = self.get_member(self.owner_id)
 
         for presence in guild.get('presences', []):
             user_id = presence['user']['id']
@@ -204,3 +213,8 @@ class Server(Hashable):
         if self.icon is None:
             return ''
         return 'https://cdn.discordapp.com/icons/{0.id}/{0.icon}.jpg'.format(self)
+
+    @property
+    def member_count(self):
+        """Returns the true member count regardless of it being loaded fully or not."""
+        return self._member_count

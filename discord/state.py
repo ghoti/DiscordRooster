@@ -34,14 +34,26 @@ from .role import Role
 from . import utils
 from .enums import Status
 
-from collections import deque
+
+from collections import deque, namedtuple
 import copy
 import datetime
+import asyncio
+import enum
+import logging
+
+class ListenerType(enum.Enum):
+    chunk = 0
+
+Listener = namedtuple('Listener', ('type', 'future', 'predicate'))
+log = logging.getLogger(__name__)
 
 class ConnectionState:
-    def __init__(self, dispatch, max_messages):
+    def __init__(self, dispatch, max_messages, *, loop):
+        self.loop = loop
         self.max_messages = max_messages
         self.dispatch = dispatch
+        self._listeners = []
         self.clear()
 
     def clear(self):
@@ -51,6 +63,30 @@ class ConnectionState:
         # extra dict to look up private channels by user id
         self._private_channels_by_user = {}
         self.messages = deque(maxlen=self.max_messages)
+
+    def process_listeners(self, listener_type, argument, result):
+        removed = []
+        for i, listener in enumerate(self._listeners):
+            if listener.type != listener_type:
+                continue
+
+            future = listener.future
+            if future.cancelled():
+                removed.append(i)
+                continue
+
+            try:
+                passed = listener.predicate(argument)
+            except Exception as e:
+                future.set_exception(e)
+                removed.append(i)
+            else:
+                if passed:
+                    future.set_result(result)
+                    removed.append(i)
+
+        for index in reversed(removed):
+            del self._listeners[index]
 
     @property
     def servers(self):
@@ -103,9 +139,6 @@ class ConnectionState:
             self._add_private_channel(PrivateChannel(id=pm['id'],
                                      user=User(**pm['recipient'])))
 
-        # we're all ready
-        self.dispatch('ready')
-
     def parse_message_create(self, data):
         channel = self.get_channel(data.get('channel_id'))
         message = Message(channel=channel, **data)
@@ -134,25 +167,29 @@ class ConnectionState:
 
     def parse_presence_update(self, data):
         server = self._get_server(data.get('guild_id'))
-        if server is not None:
-            status = data.get('status')
-            user = data['user']
-            member_id = user['id']
-            member = server.get_member(member_id)
-            if member is not None:
-                old_member = copy.copy(member)
-                member.status = data.get('status')
-                try:
-                    member.status = Status(member.status)
-                except:
-                    pass
+        if server is None:
+            return
 
-                game = data.get('game', {})
-                member.game = Game(**game) if game else None
-                member.name = user.get('username', member.name)
-                member.avatar = user.get('avatar', member.avatar)
+        status = data.get('status')
+        user = data['user']
+        member_id = user['id']
+        member = server.get_member(member_id)
+        if member is None:
+            member = self._make_member(server, data)
 
-                self.dispatch('member_update', old_member, member)
+        old_member = copy.copy(member)
+        member.status = data.get('status')
+        try:
+            member.status = Status(member.status)
+        except:
+            pass
+
+        game = data.get('game', {})
+        member.game = Game(**game) if game else None
+        member.name = user.get('username', member.name)
+        member.avatar = user.get('avatar', member.avatar)
+
+        self.dispatch('member_update', old_member, member)
 
     def parse_user_update(self, data):
         self.user = User(**data)
@@ -192,11 +229,21 @@ class ConnectionState:
 
         self.dispatch('channel_create', channel)
 
+    def _make_member(self, server, data):
+        roles = [server.default_role]
+        for roleid in data.get('roles', []):
+            role = utils.get(server.roles, id=roleid)
+            if role is not None:
+                roles.append(role)
+
+        data['roles'] = roles
+        return Member(server=server, **data)
+
     def parse_guild_member_add(self, data):
         server = self._get_server(data.get('guild_id'))
-        member = Member(server=server, **data)
-        member.roles.append(server.default_role)
+        member = self._make_member(server, data)
         server._add_member(member)
+        server._member_count += 1
         self.dispatch('member_join', member)
 
     def parse_guild_member_remove(self, data):
@@ -206,6 +253,7 @@ class ConnectionState:
             member = server.get_member(user_id)
             if member is not None:
                 server._remove_member(member)
+                server._member_count -= 1
                 self.dispatch('member_remove', member)
 
     def parse_guild_member_update(self, data):
@@ -326,6 +374,21 @@ class ConnectionState:
                 role._update(**data['role'])
                 self.dispatch('server_role_update', old_role, role)
 
+    def parse_guild_members_chunk(self, data):
+        server = self._get_server(data.get('guild_id'))
+        members = data.get('members', [])
+        for member in members:
+            m = self._make_member(server, member)
+            if m.id not in server._members:
+                server._add_member(m)
+
+        # if the owner is offline, server.owner is potentially None
+        # therefore we should check if this chunk makes it point to a valid
+        # member.
+        server.owner = server.get_member(server.owner_id)
+        log.info('processed a chunk for {} members.'.format(len(members)))
+        self.process_listeners(ListenerType.chunk, server, len(members))
+
     def parse_voice_state_update(self, data):
         server = self._get_server(data.get('guild_id'))
         if server is not None:
@@ -362,3 +425,9 @@ class ConnectionState:
         pm = self._get_private_channel(id)
         if pm is not None:
             return pm
+
+    def receive_chunk(self, guild_id):
+        future = asyncio.Future(loop=self.loop)
+        listener = Listener(ListenerType.chunk, future, lambda s: s.id == guild_id)
+        self._listeners.append(listener)
+        return future

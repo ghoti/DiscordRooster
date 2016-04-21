@@ -1,21 +1,81 @@
 import aiohttp
+import arrow
 import asyncio
 import logging
+from html.parser import HTMLParser
 import discord
 from discord.ext import commands
+from time import sleep
+import shelve
+import websockets
+from fuzzywuzzy import fuzz
 
-from config.credentials import LOGIN_EMAIL, LOGIN_PASS
+from config.credentials import LOGIN_EMAIL, LOGIN_PASS, JABBER_RELAY_PASS, JABBER_RELAY_SERVER, JABBER_RELAY_USER
 import modules.ballotbox
 import modules.fweight
 import modules.time
+import modules.weather
 import modules.who
 
-ALLIANCE = 99002172
+ALLIANCE = 99006254
+#ALLIANCE = 99002172
 #ALLIANCE = 1354830081
 VALUE = 100000000
 BIGVALUE = 25000000000
 
-bot = commands.Bot(command_prefix='!', description='Rooster knows all...')
+class MyBot(commands.Bot):
+
+    async def sane_connect(self):
+        self.gateway = await self._get_gateway()
+        await self._make_websocket()
+
+        while not self.is_closed:
+            msg = await self.ws.recv()
+            if msg is None:
+                if self.ws.close_code == 1012:
+                    await self.redirect_websocket(self.gateway)
+                    continue
+                else:
+                    # Connection was dropped, break out
+                    break
+
+            await self.received_message(msg)
+
+#bot = commands.Bot(command_prefix='!', description='Rooster knows all...')
+bot = MyBot(command_prefix='!', description='Rooster knows all...')
+
+
+@bot.command(description='Mute a given user')
+@commands.has_role("Director")
+async def mute(user: discord.Member):
+    server = discord.utils.get(bot.servers, name='J4LP')
+    await bot.add_roles(user, discord.utils.get(server.roles, name="Time-OUT"))
+
+
+@bot.command(description='Unmute a given user')
+@commands.has_role("Director")
+async def unmute(user: discord.Member):
+    server = discord.utils.get(bot.servers, name='J4LP')
+    await bot.remove_roles(user, discord.utils.get(server.roles, name='Time-OUT'))
+
+@bot.listen('on_message')
+async def on_message(message):
+    if message.author == bot.user:
+        return
+    if discord.utils.get(message.author.roles, name='Time-OUT'):
+        await bot.delete_message(message)
+
+
+@bot.command(description="Get's the current weather as a city, or in CCP's office if none provided")
+async def weather(*city: str):
+    '''
+    Get the weather in a specified city, or nearest weather station
+    '''
+    logging.info('Caught weather')
+    city = ' '.join(city)
+    weather = modules.weather.weather(city)
+    await bot.say(weather)
+
 
 @bot.command(description="Get's the current EVE Time")
 async def time():
@@ -110,13 +170,18 @@ async def killwatch():
     if not channel:
         logging.warning('That Channel isnt on the server, killwatch not running')
         return
-
+    logging.info('killwatch alive')
     #await bot.send_message(channel, "**KILL ALERT** is running! {:,}ISK Alliance Threshhold:{:,} Big isk Threshold <BETA>".format(VALUE, BIGVALUE))
 
     while not bot.is_closed:
-        with aiohttp.ClientSession() as session:
-            async with session.get('http://redisq.zkillboard.com/listen.php') as resp:
-                stream = await resp.json()
+        try:
+            with aiohttp.ClientSession() as session:
+                async with session.get('http://redisq.zkillboard.com/listen.php') as resp:
+                    stream = await resp.json()
+        except Exception:
+            logging.warning('Killwatch server gave up on us')
+            await asyncio.sleep(10)
+            stream['package'] = None
         if stream['package']:
             if 'alliance' in stream['package']['killmail']['victim']:
                 if stream['package']['killmail']['victim']['alliance']['id'] == ALLIANCE:
@@ -146,6 +211,66 @@ async def give_admin():
                             discord.utils.get(server.roles, name="Supreme Overlord"))
         await asyncio.sleep(1800)
 
+async def trivia():
+    class MLStripper(HTMLParser):
+        '''
+        Simple, no nonsense, make things unpretty html stripper for descriptions
+        '''
+        def __init__(self):
+            super().__init__()
+            self.reset()
+            self.strict = False
+            self.convert_charrefs= True
+            self.fed = []
+        def handle_data(self, d):
+            self.fed.append(d)
+        def get_data(self):
+            return ''.join(self.fed)
+
+    def strip_tags(html):
+        s = MLStripper()
+        s.feed(html)
+        return s.get_data()
+
+    await bot.wait_until_ready()
+    channel = discord.utils.get(bot.get_all_channels(), name='trivia')
+    if not channel:
+        logging.warning('That Channel isnt on the server, triviabot not running')
+        return
+    stats = shelve.open('triviastats')
+
+    while True:
+        try:
+            with aiohttp.ClientSession() as session:
+                async with session.get('http://jservice.io/api/random') as resp:
+                    stream = await resp.json()
+        except:
+            await bot.send_message(channel, "Trivia is currently down, try again, or try later!")
+            asyncio.sleep(300)
+        timer = arrow.utcnow().replace(seconds=30)
+        if stream and stream[0]['question']:
+            if stream[0]['invalid_count']:
+                bot.send_message(channel, 'Invalid Question fetched, trying again')
+                break
+            answer = strip_tags(stream[0]['answer'])
+            msg = await bot.send_message(channel, 'Category: {}  Value: ${}\nQuestion: {}\n30 seconds on the clock!'.format(stream[0]['category']['title'], stream[0]['value'], stream[0]['question']))
+            while True:
+                guess = await bot.wait_for_message(timeout=1)
+
+                if timer < arrow.utcnow():
+                    await bot.send_message(channel, "No one guessed the correct answer: {}".format(answer))
+                    break
+                if guess:
+                    if fuzz.ratio(guess.content.lower(), answer.lower()) >= 80:
+                        await bot.send_message(channel, 'Ding! {} guessed the correct answer: {}'.format(guess.author.name, answer))
+                        with shelve.open('triviastats') as stats:
+                            if guess.author.name in stats:
+                                stats[guess.author.name] += 1
+                            else:
+                                stats[guess.author.name] = 1
+                        break
+        await asyncio.sleep(5)
+
 @bot.event
 async def on_ready():
     logging.info('Logged in as')
@@ -154,20 +279,37 @@ async def on_ready():
     logging.debug('------')
 
 
-loop = asyncio.get_event_loop()
 bb = modules.ballotbox.Ballot_Box()
+logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
+logging.info('bot isnt on, connecting')
+loop = asyncio.get_event_loop()
 
 while True:
-    logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
-    logging.info('bot isnt on, connecting')
     try:
-        loop.create_task(killwatch())
+        task = bot.login(LOGIN_EMAIL, LOGIN_PASS)
+        loop.run_until_complete(task)
+
+
+    except (discord.HTTPException, aiohttp.ClientError):
+        logging.exception("Discord.py pls")
+        loop.run_until_complete(sleep(10))
+
+    else:
+        break
+
+while not bot.is_closed:
+    try:
+        logging.info('starting our tasks')
         loop.create_task(give_admin())
-        loop.run_until_complete(bot.run(LOGIN_EMAIL, LOGIN_PASS))
-        # loop.run_forever(bot.run(LOGIN_EMAIL, LOGIN_PASS))
-    except Exception:
-        loop.run_until_complete(bot.close())
-    finally:
-        loop.close()
-        bot.close()
+        #loop.create_task(trivia())
+        #loop.create_task(killwatch())
+        loop.run_until_complete(bot.sane_connect())
+
+
+
+    except (discord.HTTPException, aiohttp.ClientError, discord.GatewayNotFound,
+            websockets.InvalidHandshake, websockets.WebSocketProtocolError):
+        logging.exception("Discord.py pls")
+        loop.run_until_complete(sleep(10))
+
 
