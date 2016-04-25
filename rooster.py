@@ -10,7 +10,7 @@ import shelve
 import websockets
 from fuzzywuzzy import fuzz
 
-from config.credentials import LOGIN_EMAIL, LOGIN_PASS, JABBER_RELAY_PASS, JABBER_RELAY_SERVER, JABBER_RELAY_USER
+from config.credentials import LOGIN_TOKEN
 import modules.ballotbox
 import modules.fweight
 import modules.time
@@ -200,16 +200,16 @@ async def killwatch():
                 await bot.send_message(channel, "**BIG KILL ALERT**\nhttps://zkillboard.com/kill/{}/".
                                        format(stream['package']['killID']))
 
-#Since we are the server owner, and auth gives us a new titleset everytime someone enables discord, this is an ugly
-#hack to make sure we keep our amazing title and prestige on the server.  nofuks
-async def give_admin():
-    await bot.wait_until_ready()
-    while bot.is_logged_in:
-        logging.debug("Giving bot overlord title")
-        server = discord.utils.get(bot.servers, name='J4LP')
-        await bot.add_roles(discord.utils.get(bot.get_all_members(), name="Rooster"),
-                            discord.utils.get(server.roles, name="Supreme Overlord"))
-        await asyncio.sleep(1800)
+##Since we are the server owner, and auth gives us a new titleset everytime someone enables discord, this is an ugly
+##hack to make sure we keep our amazing title and prestige on the server.  nofuks
+#async def give_admin():
+#    await bot.wait_until_ready()
+#    while bot.is_logged_in:
+#        logging.debug("Giving bot overlord title")
+#        server = discord.utils.get(bot.servers, name='J4LP')
+#        await bot.add_roles(discord.utils.get(bot.get_all_members(), name="Rooster"),
+#                            discord.utils.get(server.roles, name="Supreme Overlord"))
+#        await asyncio.sleep(1800)
 
 async def trivia():
     class MLStripper(HTMLParser):
@@ -286,7 +286,8 @@ loop = asyncio.get_event_loop()
 
 while True:
     try:
-        task = bot.login(LOGIN_EMAIL, LOGIN_PASS)
+        #task = bot.login(LOGIN_EMAIL, LOGIN_PASS)
+        task = bot.login(LOGIN_TOKEN)
         loop.run_until_complete(task)
 
 
@@ -300,7 +301,7 @@ while True:
 while not bot.is_closed:
     try:
         logging.info('starting our tasks')
-        loop.create_task(give_admin())
+        #loop.create_task(give_admin())
         #loop.create_task(trivia())
         #loop.create_task(killwatch())
         loop.run_until_complete(bot.sane_connect())

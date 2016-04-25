@@ -50,6 +50,7 @@ import subprocess
 import shlex
 import functools
 import datetime
+import nacl.secret
 
 log = logging.getLogger(__name__)
 
@@ -122,9 +123,13 @@ class ProcessPlayer(StreamPlayer):
                          client._connected, client.play_audio, after, **kwargs)
         self.process = process
 
-    def stop(self):
+    def run(self):
+        super().run()
+
         self.process.kill()
-        super().stop()
+        if self.process.poll() is None:
+            self.process.communicate()
+
 
 class VoiceClient:
     """Represents a Discord voice connection.
@@ -168,6 +173,7 @@ class VoiceClient:
         self.sequence = 0
         self.timestamp = 0
         self.encoder = OpusEncoder(48000, 2)
+        self.secret_key = []
         log.info('created opus encoder with {0.__dict__}'.format(self.encoder))
 
     def checked_add(self, attr, value, limit):
@@ -234,7 +240,7 @@ class VoiceClient:
                 'data': {
                     'address': self.ip,
                     'port': self.port,
-                    'mode': 'plain'
+                    'mode': 'xsalsa20_poly1305'
                 }
             }
         }
@@ -246,6 +252,7 @@ class VoiceClient:
     @asyncio.coroutine
     def connection_ready(self, data):
         log.info('voice connection is now ready')
+        self.secret_key = data.get('secret_key')
         speaking = {
             'op': 5,
             'd': {
@@ -311,7 +318,7 @@ class VoiceClient:
         payload = {
             'op': 4,
             'd': {
-                'guild_id': None,
+                'guild_id': self.guild_id,
                 'channel_id': None,
                 'self_mute': True,
                 'self_deaf': False
@@ -327,19 +334,24 @@ class VoiceClient:
     # audio related
 
     def _get_voice_packet(self, data):
-        buff = bytearray(len(data) + 12)
-        buff[0] = 0x80
-        buff[1] = 0x78
+        header = bytearray(12)
+        nonce = bytearray(24)
+        box = nacl.secret.SecretBox(bytes(self.secret_key))
 
-        for i in range(0, len(data)):
-            buff[i + 12] = data[i]
+        # Formulate header
+        header[0] = 0x80
+        header[1] = 0x78
+        struct.pack_into('>H', header, 2, self.sequence)
+        struct.pack_into('>I', header, 4, self.timestamp)
+        struct.pack_into('>I', header, 8, self.ssrc)
 
-        struct.pack_into('>H', buff, 2, self.sequence)
-        struct.pack_into('>I', buff, 4, self.timestamp)
-        struct.pack_into('>I', buff, 8, self.ssrc)
-        return buff
+        # Copy header to nonce's first 12 bytes
+        nonce[:12] = header
 
-    def create_ffmpeg_player(self, filename, *, use_avconv=False, pipe=False, options=None, headers=None, after=None):
+        # Encrypt and return the data
+        return header + box.encrypt(bytes(data), bytes(nonce)).ciphertext
+
+    def create_ffmpeg_player(self, filename, *, use_avconv=False, pipe=False, options=None, before_options=None, headers=None, after=None):
         """Creates a stream player for ffmpeg that launches in a separate thread to play
         audio.
 
@@ -372,8 +384,10 @@ class VoiceClient:
         pipe : bool
             If true, denotes that ``filename`` parameter will be passed
             to the stdin of ffmpeg.
-        options: str
-            Extra command line flags to pass to ``ffmpeg``.
+        options : str
+            Extra command line flags to pass to ``ffmpeg`` after the ``-i`` flag.
+        before_options : str
+            Command line flags to pass to ``ffmpeg`` before the ``-i`` flag.
         headers: dict
             HTTP headers dictionary to pass to ``-headers`` command line option
         after : callable
@@ -393,13 +407,17 @@ class VoiceClient:
         """
         command = 'ffmpeg' if not use_avconv else 'avconv'
         input_name = '-' if pipe else shlex.quote(filename)
-        headers_arg = ""
+        before_args = ""
         if isinstance(headers, dict):
             for key, value in headers.items():
-                headers_arg += "{}: {}\r\n".format(key, value)
-            headers_arg = ' -headers ' + shlex.quote(headers_arg)
+                before_args += "{}: {}\r\n".format(key, value)
+            before_args = ' -headers ' + shlex.quote(before_args)
+
+        if isinstance(before_options, str):
+            before_args += ' ' + before_options
+
         cmd = command + '{} -i {} -f s16le -ar {} -ac {} -loglevel warning'
-        cmd = cmd.format(headers_arg, input_name, self.encoder.sampling_rate, self.encoder.channels)
+        cmd = cmd.format(before_args, input_name, self.encoder.sampling_rate, self.encoder.channels)
 
         if isinstance(options, str):
             cmd = cmd + ' ' + options
@@ -514,6 +532,9 @@ class VoiceClient:
         ydl = youtube_dl.YoutubeDL(opts)
         func = functools.partial(ydl.extract_info, url, download=False)
         info = yield from self.loop.run_in_executor(None, func)
+        if "entries" in info:
+            info = info['entries'][0]
+
         log.info('playing URL {}'.format(url))
         download_url = info['url']
         player = self.create_ffmpeg_player(download_url, **kwargs)
@@ -577,7 +598,7 @@ class VoiceClient:
         self.encoder = OpusEncoder(sample_rate, channels)
         log.info('created opus encoder with {0.__dict__}'.format(self.encoder))
 
-    def create_stream_player(self, stream, after=None):
+    def create_stream_player(self, stream, *, after=None):
         """Creates a stream player that launches in a separate thread to
         play audio.
 
@@ -613,7 +634,7 @@ class VoiceClient:
         -----------
         stream
             The stream object to read from.
-        after:
+        after
             The finalizer that is called after the stream is exhausted.
             All exceptions it throws are silently discarded. It is called
             without parameters.
@@ -625,15 +646,17 @@ class VoiceClient:
         """
         return StreamPlayer(stream, self.encoder, self._connected, self.play_audio, after)
 
-    def play_audio(self, data):
+    def play_audio(self, data, *, encode=True):
         """Sends an audio packet composed of the data.
 
         You must be connected to play audio.
 
         Parameters
         ----------
-        data
-            The *bytes-like object* denoting PCM voice data.
+        data : bytes
+            The *bytes-like object* denoting PCM or Opus voice data.
+        encode : bool
+            Indicates if ``data`` should be encoded into Opus.
 
         Raises
         -------
@@ -644,7 +667,14 @@ class VoiceClient:
         """
 
         self.checked_add('sequence', 1, 65535)
-        encoded_data = self.encoder.encode(data, self.encoder.samples_per_frame)
+        if encode:
+            encoded_data = self.encoder.encode(data, self.encoder.samples_per_frame)
+        else:
+            encoded_data = data
         packet = self._get_voice_packet(encoded_data)
-        sent = self.socket.sendto(packet, (self.endpoint_ip, self.voice_port))
+        try:
+            sent = self.socket.sendto(packet, (self.endpoint_ip, self.voice_port))
+        except BlockingIOError:
+            log.warning('A packet has been dropped (seq: {0.sequence}, timestamp: {0.timestamp})'.format(self))
+
         self.checked_add('timestamp', self.encoder.samples_per_frame, 4294967295)

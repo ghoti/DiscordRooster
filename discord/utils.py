@@ -31,6 +31,7 @@ from base64 import b64encode
 import asyncio
 import json
 
+DISCORD_EPOCH = 1420070400000
 
 class cached_property:
     def __init__(self, function):
@@ -72,6 +73,38 @@ def parse_time(timestamp):
     if timestamp:
         return datetime.datetime(*map(int, re_split(r'[^\d]', timestamp.replace('+00:00', ''))))
     return None
+
+
+def oauth_url(client_id, permissions=None, server=None, redirect_uri=None):
+    """A helper function that returns the OAuth2 URL for inviting the bot
+    into servers.
+
+    Parameters
+    -----------
+    client_id : str
+        The client ID for your bot.
+    permissions : :class:`Permissions`
+        The permissions you're requesting. If not given then you won't be requesting any
+        permissions.
+    server : :class:`Server`
+        The server to pre-select in the authorization screen, if available.
+    redirect_uri : str
+        An optional valid redirect URI.
+    """
+    url = 'https://discordapp.com/oauth2/authorize?client_id={}&scope=bot'.format(client_id)
+    if permissions is not None:
+        url = url + '&permissions=' + str(permissions.value)
+    if server is not None:
+        url = url + "&guild_id=" + server.id
+    if redirect_uri is not None:
+        from urllib.parse import urlencode
+        url = url + "&response_type=code&" + urlencode({'redirect_uri': redirect_uri})
+    return url
+
+
+def snowflake_time(id):
+    """Returns the creation date in UTC of a discord id."""
+    return datetime.datetime.utcfromtimestamp(((int(id) >> 22) + DISCORD_EPOCH) / 1000)
 
 def find(predicate, seq):
     """A helper to return the first element found in the sequence

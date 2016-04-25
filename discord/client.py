@@ -51,7 +51,7 @@ import logging, traceback
 import sys, time, re, json
 import tempfile, os, hashlib
 import itertools
-import zlib, math
+import zlib
 from random import randint as random_integer
 
 PY35 = sys.version_info >= (3, 5)
@@ -67,6 +67,8 @@ class Client:
 
     .. _deque: https://docs.python.org/3.4/library/collections.html#collections.deque
     .. _event loop: https://docs.python.org/3/library/asyncio-eventloops.html
+    .. _connector: http://aiohttp.readthedocs.org/en/stable/client_reference.html#connectors
+    .. _ProxyConnector: http://aiohttp.readthedocs.org/en/stable/client_reference.html#proxyconnector
 
     Parameters
     ----------
@@ -81,6 +83,9 @@ class Client:
         Indicates if :meth:`login` should cache the authentication tokens. Defaults
         to ``True``. The method in which the cache is written is done by writing to
         disk to a temporary directory.
+    connector : aiohttp.BaseConnector
+        The `connector`_ to use for connection pooling. Useful for proxies, e.g.
+        with a `ProxyConnector`_.
 
     Attributes
     -----------
@@ -113,6 +118,7 @@ class Client:
         self.gateway = None
         self.voice = None
         self.session_id = None
+        self.keep_alive = None
         self.sequence = 0
         self.loop = asyncio.get_event_loop() if loop is None else loop
         self._listeners = []
@@ -122,7 +128,7 @@ class Client:
         if max_messages is None or max_messages < 100:
             max_messages = 5000
 
-        self.connection = ConnectionState(self.dispatch, max_messages, loop=self.loop)
+        self.connection = ConnectionState(self.dispatch, self.request_offline_members, max_messages, loop=self.loop)
 
         # Blame Jake for this
         user_agent = 'DiscordBot (https://github.com/Rapptz/discord.py {0}) Python/{1[0]}.{1[1]} aiohttp/{2}'
@@ -132,7 +138,8 @@ class Client:
             'user-agent': user_agent.format(library_version, sys.version_info, aiohttp.__version__)
         }
 
-        self.session = aiohttp.ClientSession(loop=self.loop)
+        connector = options.pop('connector', None)
+        self.session = aiohttp.ClientSession(loop=self.loop, connector=connector)
 
         self._closed = asyncio.Event(loop=self.loop)
         self._is_logged_in = asyncio.Event(loop=self.loop)
@@ -144,28 +151,6 @@ class Client:
         self._session_id_found = asyncio.Event(loop=self.loop)
 
     # internals
-
-    def _get_all_chunks(self):
-        # a chunk has a maximum of 1000 members.
-        # we need to find out how many futures we're actually waiting for
-        large_servers = filter(lambda s: s.large, self.servers)
-        futures = []
-        for server in large_servers:
-            chunks_needed = math.ceil(server._member_count / 1000)
-            for chunk in range(chunks_needed):
-                futures.append(self.connection.receive_chunk(server.id))
-
-        return futures
-
-    @asyncio.coroutine
-    def _fill_offline(self):
-        yield from self.request_offline_members(filter(lambda s: s.large, self.servers))
-        chunks = self._get_all_chunks()
-
-        if chunks:
-            yield from asyncio.wait(chunks)
-
-        self.dispatch('ready')
 
     def _get_cache_filename(self, email):
         filename = hashlib.md5(email.encode('utf-8')).hexdigest()
@@ -198,7 +183,7 @@ class Client:
         try:
             cache_file = self._get_cache_filename(email)
             os.makedirs(os.path.dirname(cache_file), exist_ok=True)
-            with open(cache_file, 'w') as f:
+            with os.fdopen(os.open(cache_file, os.O_WRONLY | os.O_CREAT, 0o0600), 'w') as f:
                 log.info('updating login cache')
                 f.write(self.token)
         except OSError:
@@ -393,10 +378,7 @@ class Client:
         except AttributeError:
             log.info('Unhandled event {}'.format(event))
         else:
-            func(data)
-
-        if is_ready:
-            utils.create_task(self._fill_offline(), loop=self.loop)
+            result = func(data)
 
     @asyncio.coroutine
     def _make_websocket(self, initial=True):
@@ -459,28 +441,26 @@ class Client:
     # login state management
 
     @asyncio.coroutine
-    def login(self, email, password):
-        """|coro|
+    def _login_1(self, token):
+        log.info('logging in using static token')
+        self.token = token
+        self.email = None
+        self.headers['authorization'] = 'Bot {}'.format(self.token)
+        resp = yield from self.session.get(endpoints.ME, headers=self.headers)
+        yield from resp.release()
+        log.debug(request_logging_format.format(method='GET', response=resp))
 
-        Logs in the client with the specified credentials.
+        if resp.status != 200:
+            if resp.status == 401:
+                raise LoginFailure('Improper token has been passed.')
+            else:
+                raise HTTPException(resp, None)
 
-        Parameters
-        ----------
-        email : str
-            The email used to login.
-        password : str
-            The password used to login.
+        log.info('token auth returned status code {}'.format(resp.status))
+        self._is_logged_in.set()
 
-        Raises
-        ------
-        LoginFailure
-            The wrong credentials are passed.
-        HTTPException
-            An unknown HTTP related error occurred,
-            usually when it isn't 200 or the known incorrect credentials
-            passing status code.
-        """
-
+    @asyncio.coroutine
+    def _login_2(self, email, password):
         # attempt to read the token from cache
         if self.cache_auth:
             yield from self._login_via_cache(email, password)
@@ -514,6 +494,44 @@ class Client:
         # let's make sure we don't have to do it again
         if self.cache_auth:
             self._update_cache(email, password)
+
+    @asyncio.coroutine
+    def login(self, *args):
+        """|coro|
+
+        Logs in the client with the specified credentials.
+
+        This function can be used in two different ways.
+
+        .. code-block:: python
+
+            await client.login('token')
+
+            # or
+
+            await client.login('email', 'password')
+
+        More than 2 parameters or less than 1 parameter raises a
+        :exc:`TypeError`.
+
+        Raises
+        ------
+        LoginFailure
+            The wrong credentials are passed.
+        HTTPException
+            An unknown HTTP related error occurred,
+            usually when it isn't 200 or the known incorrect credentials
+            passing status code.
+        TypeError
+            The incorrect number of parameters is passed.
+        """
+
+        n = len(args)
+        if n in (2, 1):
+            yield from getattr(self, '_login_' + str(n))(*args)
+        else:
+            raise TypeError('login() takes 1 or 2 positional arguments but {} were given'.format(n))
+
 
     @asyncio.coroutine
     def logout(self):
@@ -561,9 +579,9 @@ class Client:
 
     @asyncio.coroutine
     def close(self):
-        """Closes the websocket connection.
+        """|coro|
 
-        To reconnect the websocket connection, :meth:`connect` must be used.
+        Closes the connection to discord.
         """
         if self.is_closed:
             return
@@ -572,25 +590,26 @@ class Client:
             yield from self.voice.disconnect()
             self.voice = None
 
-        if self.ws.open:
+        if self.ws is not None and self.ws.open:
             yield from self.ws.close()
 
+        if self.keep_alive is not None:
+            self.keep_alive.cancel()
 
         yield from self.session.close()
-        self.keep_alive.cancel()
         self._closed.set()
         self._is_ready.clear()
 
     @asyncio.coroutine
-    def start(self, email, password):
+    def start(self, *args):
         """|coro|
 
         A shorthand coroutine for :meth:`login` + :meth:`connect`.
         """
-        yield from self.login(email, password)
+        yield from self.login(*args)
         yield from self.connect()
 
-    def run(self, email, password):
+    def run(self, *args):
         """A blocking call that abstracts away the `event loop`_
         initialisation from you.
 
@@ -601,7 +620,7 @@ class Client:
         Roughly Equivalent to: ::
 
             try:
-                loop.run_until_complete(start(email, password))
+                loop.run_until_complete(start(*args))
             except KeyboardInterrupt:
                 loop.run_until_complete(logout())
                 # cancel all tasks lingering
@@ -616,7 +635,7 @@ class Client:
         """
 
         try:
-            self.loop.run_until_complete(self.start(email, password))
+            self.loop.run_until_complete(self.start(*args))
         except KeyboardInterrupt:
             self.loop.run_until_complete(self.logout())
             pending = asyncio.Task.all_tasks()
@@ -910,16 +929,23 @@ class Client:
         return channel
 
     @asyncio.coroutine
-    def _rate_limit_helper(self, name, method, url, data):
+    def _rate_limit_helper(self, name, method, url, data, retries=0):
         resp = yield from self.session.request(method, url, data=data, headers=self.headers)
         tmp = request_logging_format.format(method=method, response=resp)
         log_fmt = 'In {}, {}'.format(name, tmp)
         log.debug(log_fmt)
+
+        if resp.status == 502 and retries < 5:
+            # retry the 502 request unconditionally
+            log.info('Retrying the 502 request to ' + name)
+            yield from asyncio.sleep(retries + 1)
+            return (yield from self._rate_limit_helper(name, method, url, data, retries + 1))
+
         if resp.status == 429:
             retry = float(resp.headers['Retry-After']) / 1000.0
             yield from resp.release()
             yield from asyncio.sleep(retry)
-            return (yield from self._rate_limit_helper(name, method, url, data))
+            return (yield from self._rate_limit_helper(name, method, url, data, retries))
 
         return resp
 
@@ -1430,12 +1456,13 @@ class Client:
         yield from response.release()
 
     @asyncio.coroutine
-    def edit_profile(self, password, **fields):
+    def edit_profile(self, password=None, **fields):
         """|coro|
 
         Edits the current profile of the client.
 
-        All fields except ``password`` are optional.
+        If a bot account is used then the password field is optional,
+        otherwise it is required.
 
         The profile is **not** edited in place.
 
@@ -1451,7 +1478,8 @@ class Client:
         Parameters
         -----------
         password : str
-            The current password for the client's account.
+            The current password for the client's account. Not used
+            for bot accounts.
         new_password : str
             The new password you wish to change to.
         email : str
@@ -1468,6 +1496,8 @@ class Client:
             Editing your profile failed.
         InvalidArgument
             Wrong image format passed for ``avatar``.
+        ClientException
+            Password is required for non-bot accounts.
         """
 
         try:
@@ -1480,13 +1510,22 @@ class Client:
             else:
                 avatar = None
 
+        not_bot_account = not self.user.bot
+        if not_bot_account and password is None:
+            raise ClientException('Password is required for non-bot accounts.')
+
         payload = {
             'password': password,
-            'new_password': fields.get('new_password'),
-            'email': fields.get('email', self.email),
             'username': fields.get('username', self.user.name),
             'avatar': avatar
         }
+
+        if not_bot_account:
+            payload['email'] = fields.get('email', self.email)
+
+            if 'new_password' in fields:
+                payload['new_password'] = fields['new_password']
+
 
         r = yield from self.session.patch(endpoints.ME, data=utils.to_json(payload), headers=self.headers)
         log.debug(request_logging_format.format(method='PATCH', response=r))
@@ -1494,12 +1533,14 @@ class Client:
 
         data = yield from r.json()
         log.debug(request_success_log.format(response=r, json=payload, data=data))
-        self.token = data['token']
-        self.email = data['email']
-        self.headers['authorization'] = self.token
 
-        if self.cache_auth:
-            self._update_cache(self.email, password)
+        if not_bot_account:
+            self.token = data['token']
+            self.email = data['email']
+            self.headers['authorization'] = self.token
+
+            if self.cache_auth:
+                self._update_cache(self.email, password)
 
     @asyncio.coroutine
     def change_status(self, game=None, idle=False):
@@ -1546,9 +1587,13 @@ class Client:
         log.debug('Sending "{}" to change status'.format(sent))
         yield from self._send_ws(sent)
         for server in self.servers:
-            server.me.game = game
+            me = server.me
+            if me is None:
+                continue
+
+            me.game = game
             status = Status.idle if idle_since else Status.online
-            server.me.status = status
+            me.status = status
 
     # Channel management
 

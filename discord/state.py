@@ -36,10 +36,9 @@ from .enums import Status
 
 
 from collections import deque, namedtuple
-import copy
+import copy, enum, math
 import datetime
 import asyncio
-import enum
 import logging
 
 class ListenerType(enum.Enum):
@@ -47,12 +46,14 @@ class ListenerType(enum.Enum):
 
 Listener = namedtuple('Listener', ('type', 'future', 'predicate'))
 log = logging.getLogger(__name__)
+ReadyState = namedtuple('ReadyState', ('launch', 'servers'))
 
 class ConnectionState:
-    def __init__(self, dispatch, max_messages, *, loop):
+    def __init__(self, dispatch, chunker, max_messages, *, loop):
         self.loop = loop
         self.max_messages = max_messages
         self.dispatch = dispatch
+        self.chunker = chunker
         self._listeners = []
         self.clear()
 
@@ -84,6 +85,8 @@ class ConnectionState:
                 if passed:
                     future.set_result(result)
                     removed.append(i)
+                    if listener.type == ListenerType.chunk:
+                        break
 
         for index in reversed(removed):
             del self._listeners[index]
@@ -124,20 +127,60 @@ class ConnectionState:
 
     def _add_server_from_data(self, guild):
         server = Server(**guild)
-        server.me = server.get_member(self.user.id)
+        Server.me = property(lambda s: s.get_member(self.user.id))
         self._add_server(server)
         return server
 
+    def chunks_needed(self, server):
+        for chunk in range(math.ceil(server._member_count / 1000)):
+            yield self.receive_chunk(server.id)
+
+    @asyncio.coroutine
+    def _delay_ready(self):
+        launch = self._ready_state.launch
+        while not launch.is_set():
+            # this snippet of code is basically waiting 2 seconds
+            # until the last GUILD_CREATE was sent
+            launch.set()
+            yield from asyncio.sleep(2)
+
+        # get all the chunks
+        servers = self._ready_state.servers
+        chunks = []
+        for server in servers:
+            chunks.extend(self.chunks_needed(server))
+
+        # we only want to request ~75 guilds per chunk request.
+        splits = [servers[i:i + 75] for i in range(0, len(servers), 75)]
+        for split in splits:
+            yield from self.chunker(split)
+
+        # wait for the chunks
+        if chunks:
+            yield from asyncio.wait(chunks)
+
+        # remove the state
+        del self._ready_state
+
+        # dispatch the event
+        self.dispatch('ready')
+
     def parse_ready(self, data):
+        self._ready_state = ReadyState(launch=asyncio.Event(), servers=[])
         self.user = User(**data['user'])
         guilds = data.get('guilds')
 
+        servers = self._ready_state.servers
         for guild in guilds:
-            self._add_server_from_data(guild)
+            server = self._add_server_from_data(guild)
+            if server.large:
+                servers.append(server)
 
         for pm in data.get('private_channels'):
             self._add_private_channel(PrivateChannel(id=pm['id'],
                                      user=User(**pm['recipient'])))
+
+        utils.create_task(self._delay_ready(), loop=self.loop)
 
     def parse_message_create(self, data):
         channel = self.get_channel(data.get('channel_id'))
@@ -153,17 +196,16 @@ class ConnectionState:
             self.messages.remove(found)
 
     def parse_message_update(self, data):
-        older_message = self._get_message(data.get('id'))
-        if older_message is not None:
+        message = self._get_message(data.get('id'))
+        if message is not None:
+            older_message = copy.copy(message)
             if 'content' not in data:
                 # embed only edit
-                message = copy.copy(older_message)
                 message.embeds = data['embeds']
             else:
-                message = Message(channel=older_message.channel, **data)
+                message._update(channel=message.channel, **data)
+
             self.dispatch('message_edit', older_message, message)
-            # update the older message
-            older_message = message
 
     def parse_presence_update(self, data):
         server = self._get_server(data.get('guild_id'))
@@ -175,7 +217,13 @@ class ConnectionState:
         member_id = user['id']
         member = server.get_member(member_id)
         if member is None:
+            if 'username' not in user:
+                # sometimes we receive 'incomplete' member data post-removal.
+                # skip these useless cases.
+                return
+
             member = self._make_member(server, data)
+            server._add_member(member)
 
         old_member = copy.copy(member)
         member.status = data.get('status')
@@ -266,7 +314,9 @@ class ConnectionState:
             member.name = user['username']
             member.discriminator = user['discriminator']
             member.avatar = user['avatar']
+            member.bot = user.get('bot', False)
             member.roles = [server.default_role]
+
             # update the roles
             for role in server.roles:
                 if role.id in data['roles']:
@@ -274,9 +324,8 @@ class ConnectionState:
 
             self.dispatch('member_update', old_member, member)
 
-    def parse_guild_create(self, data):
-        unavailable = data.get('unavailable')
-        if unavailable == False:
+    def _get_create_server(self, data):
+        if data.get('unavailable') == False:
             # GUILD_CREATE with unavailable in the response
             # usually means that the server has become available
             # and is therefore in the cache
@@ -284,19 +333,59 @@ class ConnectionState:
             if server is not None:
                 server.unavailable = False
                 server._from_data(data)
-                self.dispatch('server_available', server)
-                return
+                return server
 
+        return self._add_server_from_data(data)
+
+    @asyncio.coroutine
+    def _chunk_and_dispatch(self, server, unavailable):
+        yield from self.chunker(server)
+        chunks = list(self.chunks_needed(server))
+        if chunks:
+            yield from asyncio.wait(chunks)
+
+        if unavailable == False:
+            self.dispatch('server_available', server)
+        else:
+            self.dispatch('server_join', server)
+
+    def parse_guild_create(self, data):
+        unavailable = data.get('unavailable')
         if unavailable == True:
             # joined a server with unavailable == True so..
             return
 
-        # if we're at this point then it was probably
-        # unavailable during the READY event and is now
-        # available, so it isn't in the cache...
+        server = self._get_create_server(data)
 
-        server = self._add_server_from_data(data)
-        self.dispatch('server_join', server)
+        # check if it requires chunking
+        if server.large:
+            if unavailable == False:
+                # check if we're waiting for 'useful' READY
+                # and if we are, we don't want to dispatch any
+                # event such as server_join or server_available
+                # because we're still in the 'READY' phase. Or
+                # so we say.
+                try:
+                    state = self._ready_state
+                    state.launch.clear()
+                    state.servers.append(server)
+                except AttributeError:
+                    # the _ready_state attribute is only there during
+                    # processing of useful READY.
+                    pass
+                else:
+                    return
+
+            # since we're not waiting for 'useful' READY we'll just
+            # do the chunk request here
+            utils.create_task(self._chunk_and_dispatch(server, unavailable), loop=self.loop)
+            return
+
+        # Dispatch available if newly available
+        if unavailable == False:
+            self.dispatch('server_available', server)
+        else:
+            self.dispatch('server_join', server)
 
     def parse_guild_update(self, data):
         server = self._get_server(data.get('id'))

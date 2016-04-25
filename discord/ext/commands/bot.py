@@ -51,6 +51,27 @@ def when_mentioned(bot, msg):
     to being mentioned, e.g. ``@bot ``."""
     return '{0.user.mention} '.format(bot)
 
+def when_mentioned_or(*prefixes):
+    """A callable that implements when mentioned or other prefixes provided.
+
+    Examples
+    ---------
+
+    .. code-block:: python
+
+        bot = commands.Bot(command_prefix=commands.when_mentioned_or('!'))
+
+    See Also
+    ----------
+    :func:`when_mentioned`
+    """
+    def inner(bot, msg):
+        r = list(prefixes)
+        r.append('{0.user.mention} '.format(bot))
+        return r
+
+    return inner
+
 @asyncio.coroutine
 def _default_help_command(ctx, *commands : str):
     """Shows this message."""
@@ -215,7 +236,6 @@ class Bot(GroupMixin, discord.Client):
 
     # utility "send_*" functions
 
-    @asyncio.coroutine
     def say(self, *args, **kwargs):
         """|coro|
 
@@ -230,10 +250,8 @@ class Bot(GroupMixin, discord.Client):
         :meth:`Client.send_message`
         """
         destination = _get_variable('_internal_channel')
-        result = yield from self.send_message(destination, *args, **kwargs)
-        return result
+        return self.send_message(destination, *args, **kwargs)
 
-    @asyncio.coroutine
     def whisper(self, *args, **kwargs):
         """|coro|
 
@@ -248,10 +266,8 @@ class Bot(GroupMixin, discord.Client):
         :meth:`Client.send_message`
         """
         destination = _get_variable('_internal_author')
-        result = yield from self.send_message(destination, *args, **kwargs)
-        return result
+        return self.send_message(destination, *args, **kwargs)
 
-    @asyncio.coroutine
     def reply(self, content, *args, **kwargs):
         """|coro|
 
@@ -269,10 +285,8 @@ class Bot(GroupMixin, discord.Client):
         author = _get_variable('_internal_author')
         destination = _get_variable('_internal_channel')
         fmt = '{0.mention}, {1}'.format(author, str(content))
-        result = yield from self.send_message(destination, fmt, *args, **kwargs)
-        return result
+        return self.send_message(destination, fmt, *args, **kwargs)
 
-    @asyncio.coroutine
     def upload(self, *args, **kwargs):
         """|coro|
 
@@ -284,13 +298,11 @@ class Bot(GroupMixin, discord.Client):
 
         See Also
         ---------
-        :meth:`Client.sned_file`
+        :meth:`Client.send_file`
         """
         destination = _get_variable('_internal_channel')
-        result = yield from self.send_file(destination, *args, **kwargs)
-        return result
+        return self.send_file(destination, *args, **kwargs)
 
-    @asyncio.coroutine
     def type(self):
         """|coro|
 
@@ -305,7 +317,7 @@ class Bot(GroupMixin, discord.Client):
         The :meth:`Client.send_typing` function.
         """
         destination = _get_variable('_internal_channel')
-        yield from self.send_typing(destination)
+        return self.send_typing(destination)
 
     # listener registration
 
@@ -450,6 +462,10 @@ class Bot(GroupMixin, discord.Client):
         If no cog is found then ``None`` is returned, otherwise
         the cog instance that is being removed is returned.
 
+        If the cog defines a special member function named ``__unload``
+        then it is called when removal has completed. This function
+        **cannot** be a coroutine. It must be a regular function.
+
         Parameters
         -----------
         name : str
@@ -472,6 +488,12 @@ class Bot(GroupMixin, discord.Client):
             # remove event listeners the cog has
             if name.startswith('on_'):
                 self.remove_listener(member)
+
+        unloader_name = '_{0.__class__.__name__}__unload'.format(cog)
+        try:
+            getattr(cog, unloader_name)()
+        except AttributeError:
+            pass
 
         del cog
 
