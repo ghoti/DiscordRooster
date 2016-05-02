@@ -16,6 +16,7 @@ import modules.fweight
 import modules.time
 import modules.weather
 import modules.who
+import modules.insurance
 
 ALLIANCE = 99006254
 #ALLIANCE = 99002172
@@ -108,6 +109,17 @@ async def fweight(*toon: str):
     toon = ' '.join(toon)
     status = modules.fweight.fweight(toon)
     await bot.say(status)
+
+@bot.command(description="Get Platinum insurance rate for a ship")
+async def insure(*ship: str):
+    '''
+    Insurance rate (platinum) for a given ship
+    CASE SENSITIVE
+    '''
+    logging.info("Caught !insure with paramaters: {}".format(ship))
+    ship = ' '.join(ship)
+    insurance = modules.insurance.insure(ship)
+    await bot.say(insurance)
 
 
 @bot.command(pass_context=True, description="Call a vote for 30 seconds")
