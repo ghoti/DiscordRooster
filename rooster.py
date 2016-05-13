@@ -21,30 +21,18 @@ import modules.insurance
 ALLIANCE = 99006254
 #ALLIANCE = 99002172
 #ALLIANCE = 1354830081
-VALUE = 100000000
+VALUE = 500000000
 BIGVALUE = 25000000000
 
-class MyBot(commands.Bot):
+bot = commands.Bot(command_prefix='!', description='Rooster knows all...')
+bot.change_status(game=discord.Game(name='Hello'))
 
-    async def sane_connect(self):
-        self.gateway = await self._get_gateway()
-        await self._make_websocket()
-
-        while not self.is_closed:
-            msg = await self.ws.recv()
-            if msg is None:
-                if self.ws.close_code == 1012:
-                    await self.redirect_websocket(self.gateway)
-                    continue
-                else:
-                    # Connection was dropped, break out
-                    break
-
-            await self.received_message(msg)
-
-#bot = commands.Bot(command_prefix='!', description='Rooster knows all...')
-bot = MyBot(command_prefix='!', description='Rooster knows all...')
-
+@bot.command(pass_context=True, description="Change the MOTD of a channel")
+@commands.has_role("Director")
+async def topic(ctx, *motd: str):
+    motd = ' '.join(motd)
+    await bot.edit_channel(channel=ctx.message.channel, topic=motd)
+    await bot.say('{} has changed the topic to _{}_'.format(ctx.message.author.name, motd))
 
 @bot.command(description='Mute a given user')
 @commands.has_role("Director")
@@ -212,16 +200,6 @@ async def killwatch():
                 await bot.send_message(channel, "**BIG KILL ALERT**\nhttps://zkillboard.com/kill/{}/".
                                        format(stream['package']['killID']))
 
-##Since we are the server owner, and auth gives us a new titleset everytime someone enables discord, this is an ugly
-##hack to make sure we keep our amazing title and prestige on the server.  nofuks
-#async def give_admin():
-#    await bot.wait_until_ready()
-#    while bot.is_logged_in:
-#        logging.debug("Giving bot overlord title")
-#        server = discord.utils.get(bot.servers, name='J4LP')
-#        await bot.add_roles(discord.utils.get(bot.get_all_members(), name="Rooster"),
-#                            discord.utils.get(server.roles, name="Supreme Overlord"))
-#        await asyncio.sleep(1800)
 
 async def trivia():
     class MLStripper(HTMLParser):
@@ -289,6 +267,7 @@ async def on_ready():
     logging.info(bot.user.name)
     logging.debug(bot.user.id)
     logging.debug('------')
+    await bot.change_status(game=discord.Game(name="a game of Chicken"))
 
 
 bb = modules.ballotbox.Ballot_Box()
@@ -298,7 +277,6 @@ loop = asyncio.get_event_loop()
 
 while True:
     try:
-        #task = bot.login(LOGIN_EMAIL, LOGIN_PASS)
         task = bot.login(LOGIN_TOKEN)
         loop.run_until_complete(task)
 
@@ -313,10 +291,10 @@ while True:
 while not bot.is_closed:
     try:
         logging.info('starting our tasks')
-        #loop.create_task(give_admin())
         #loop.create_task(trivia())
-        #loop.create_task(killwatch())
-        loop.run_until_complete(bot.sane_connect())
+        loop.create_task(killwatch())
+        loop.run_until_complete(bot.connect())
+
 
 
 

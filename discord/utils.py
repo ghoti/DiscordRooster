@@ -208,10 +208,10 @@ def _verify_successful_response(response):
         message = None
         text = None
         if response.headers['content-type'] == 'application/json':
-            data = yield from response.json()
+            data = yield from response.json(encoding='utf-8')
             message = data.get('message')
         else:
-            text = yield from response.text()
+            text = yield from response.text(encoding='utf-8')
 
         if code == 403:
             raise Forbidden(response, message, text)
@@ -236,7 +236,3 @@ def _bytes_to_base64_data(data):
 def to_json(obj):
     return json.dumps(obj, separators=(',', ':'), ensure_ascii=True)
 
-try:
-    create_task = asyncio.ensure_future
-except AttributeError:
-    create_task = asyncio.async

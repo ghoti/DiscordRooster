@@ -28,7 +28,6 @@ from . import __version__ as library_version
 from . import endpoints
 from .user import User
 from .member import Member
-from .game import Game
 from .channel import Channel, PrivateChannel
 from .server import Server
 from .message import Message
@@ -38,20 +37,20 @@ from .role import Role
 from .errors import *
 from .state import ConnectionState
 from .permissions import Permissions
-from . import utils
-from .enums import ChannelType, ServerRegion, Status
+from . import utils, compat
+from .enums import ChannelType, ServerRegion
 from .voice_client import VoiceClient
 from .iterators import LogsFromIterator
+from .gateway import *
 
 import asyncio
 import aiohttp
 import websockets
 
 import logging, traceback
-import sys, time, re, json
+import sys, re
 import tempfile, os, hashlib
 import itertools
-import zlib
 from random import randint as random_integer
 
 PY35 = sys.version_info >= (3, 5)
@@ -91,10 +90,10 @@ class Client:
     -----------
     user : Optional[:class:`User`]
         Represents the connected client. None if not logged in.
-    voice : Optional[:class:`VoiceClient`]
-        Represents the current voice connection. None if you are not connected
-        to a voice channel. To connect to voice use :meth:`join_voice_channel`.
-        To query the voice connection state use :meth:`is_voice_connected`.
+    voice_clients : iterable of :class:`VoiceClient`
+        Represents a list of voice connections. To connect to voice use
+        :meth:`join_voice_channel`. To query the voice connection state use
+        :meth:`is_voice_connected`.
     servers : iterable of :class:`Server`
         The servers that the connected client is a member of.
     private_channels : iterable of :class:`PrivateChannel`
@@ -115,11 +114,6 @@ class Client:
     def __init__(self, *, loop=None, **options):
         self.ws = None
         self.token = None
-        self.gateway = None
-        self.voice = None
-        self.session_id = None
-        self.keep_alive = None
-        self.sequence = 0
         self.loop = asyncio.get_event_loop() if loop is None else loop
         self._listeners = []
         self.cache_auth = options.get('cache_auth', True)
@@ -145,21 +139,11 @@ class Client:
         self._is_logged_in = asyncio.Event(loop=self.loop)
         self._is_ready = asyncio.Event(loop=self.loop)
 
-        # These two events correspond to the two events necessary
-        # for a connection to be made
-        self._voice_data_found = asyncio.Event(loop=self.loop)
-        self._session_id_found = asyncio.Event(loop=self.loop)
-
     # internals
 
     def _get_cache_filename(self, email):
         filename = hashlib.md5(email.encode('utf-8')).hexdigest()
         return os.path.join(tempfile.gettempdir(), 'discord_py', filename)
-
-    @asyncio.coroutine
-    def _send_ws(self, data):
-        self.dispatch('socket_raw_send', data)
-        yield from self.ws.send(data)
 
     @asyncio.coroutine
     def _login_via_cache(self, email, password):
@@ -242,25 +226,17 @@ class Client:
             raise InvalidArgument('Destination must be Channel, PrivateChannel, User, or Object')
 
     def __getattr__(self, name):
-        if name in ('user', 'servers', 'private_channels', 'messages'):
+        if name in ('user', 'servers', 'private_channels', 'messages', 'voice_clients'):
             return getattr(self.connection, name)
         else:
             msg = "'{}' object has no attribute '{}'"
             raise AttributeError(msg.format(self.__class__, name))
 
     def __setattr__(self, name, value):
-        if name in ('user', 'servers', 'private_channels', 'messages'):
+        if name in ('user', 'servers', 'private_channels', 'messages', 'voice_clients'):
             return setattr(self.connection, name, value)
         else:
             object.__setattr__(self, name, value)
-
-    @asyncio.coroutine
-    def _get_gateway(self):
-        resp = yield from self.session.get(endpoints.GATEWAY, headers=self.headers)
-        if resp.status != 200:
-            raise GatewayNotFound()
-        data = yield from resp.json()
-        return data.get('url')
 
     @asyncio.coroutine
     def _run_event(self, event, *args, **kwargs):
@@ -283,23 +259,7 @@ class Client:
             getattr(self, handler)(*args, **kwargs)
 
         if hasattr(self, method):
-            utils.create_task(self._run_event(method, *args, **kwargs), loop=self.loop)
-
-    @asyncio.coroutine
-    def keep_alive_handler(self, interval):
-        try:
-            while not self.is_closed:
-                payload = {
-                    'op': 1,
-                    'd': int(time.time())
-                }
-
-                msg = 'Keeping websocket alive with timestamp {}'
-                log.debug(msg.format(payload['d']))
-                yield from self._send_ws(utils.to_json(payload))
-                yield from asyncio.sleep(interval)
-        except asyncio.CancelledError:
-            pass
+            compat.create_task(self._run_event(method, *args, **kwargs), loop=self.loop)
 
     @asyncio.coroutine
     def on_error(self, event_method, *args, **kwargs):
@@ -313,130 +273,6 @@ class Client:
         """
         print('Ignoring exception in {}'.format(event_method), file=sys.stderr)
         traceback.print_exc()
-
-    @asyncio.coroutine
-    def received_message(self, msg):
-        self.dispatch('socket_raw_receive', msg)
-
-        if isinstance(msg, bytes):
-            msg = zlib.decompress(msg, 15, 10490000) # This is 10 MiB
-            msg = msg.decode('utf-8')
-
-        msg = json.loads(msg)
-
-        log.debug('WebSocket Event: {}'.format(msg))
-        self.dispatch('socket_response', msg)
-
-        op = msg.get('op')
-        data = msg.get('d')
-
-        if 's' in msg:
-            self.sequence = msg['s']
-
-        if op == 7:
-            # redirect op code
-            yield from self.ws.close()
-            yield from self.redirect_websocket(data.get('url'))
-            return
-
-        if op != 0:
-            log.info('Unhandled op {}'.format(op))
-            return
-
-        event = msg.get('t')
-        is_ready = event == 'READY'
-
-        if is_ready:
-            self.connection.clear()
-            self.session_id = data['session_id']
-
-        if is_ready or event == 'RESUMED':
-            interval = data['heartbeat_interval'] / 1000.0
-            self.keep_alive = utils.create_task(self.keep_alive_handler(interval), loop=self.loop)
-
-        if event == 'VOICE_STATE_UPDATE':
-            user_id = data.get('user_id')
-            if user_id == self.user.id:
-                if self.is_voice_connected():
-                    self.voice.channel = self.get_channel(data.get('channel_id'))
-
-                self.session_id = data.get('session_id')
-                log.debug('Session ID found: {}'.format(self.session_id))
-                self._session_id_found.set()
-
-
-        if event == 'VOICE_SERVER_UPDATE':
-            self._voice_data_found.data = data
-            log.debug('Voice connection data found: {}'.format(data))
-            self._voice_data_found.set()
-            return
-
-        parser = 'parse_' + event.lower()
-
-        try:
-            func = getattr(self.connection, parser)
-        except AttributeError:
-            log.info('Unhandled event {}'.format(event))
-        else:
-            result = func(data)
-
-    @asyncio.coroutine
-    def _make_websocket(self, initial=True):
-        if not self.is_logged_in:
-            raise ClientException('You must be logged in to connect')
-
-        self.ws = yield from websockets.connect(self.gateway, loop=self.loop)
-        self.ws.max_size = None
-        log.info('Created websocket connected to {0.gateway}'.format(self))
-
-        if initial:
-            payload = {
-                'op': 2,
-                'd': {
-                    'token': self.token,
-                    'properties': {
-                        '$os': sys.platform,
-                        '$browser': 'discord.py',
-                        '$device': 'discord.py',
-                        '$referrer': '',
-                        '$referring_domain': ''
-                    },
-                    'compress': True,
-                    'large_threshold': 250,
-                    'v': 3
-                }
-            }
-
-            yield from self._send_ws(utils.to_json(payload))
-            log.info('sent the initial payload to create the websocket')
-
-    @asyncio.coroutine
-    def redirect_websocket(self, url):
-        # if we get redirected then we need to recreate the websocket
-        # when this recreation happens we have to try to do a reconnection
-        log.info('redirecting websocket from {} to {}'.format(self.gateway, url))
-        self.keep_alive_handler.cancel()
-
-        self.gateway = url
-        yield from self._make_websocket(initial=False)
-        yield from self._reconnect_ws()
-
-        if self.is_voice_connected():
-            # update the websocket reference pointed to by voice
-            self.voice.main_ws = self.ws
-
-    @asyncio.coroutine
-    def _reconnect_ws(self):
-        payload = {
-            'op': 6,
-            'd': {
-                'session_id': self.session_id,
-                'seq': self.sequence
-            }
-        }
-
-        log.info('sending reconnection frame to websocket {}'.format(payload))
-        yield from self._send_ws(utils.to_json(payload))
 
     # login state management
 
@@ -485,7 +321,7 @@ class Client:
         log.info('logging in returned status code {}'.format(resp.status))
         self.email = email
 
-        body = yield from resp.json()
+        body = yield from resp.json(encoding='utf-8')
         self.token = body['token']
         self.headers['authorization'] = self.token
         self._is_logged_in.set()
@@ -553,29 +389,24 @@ class Client:
 
         Raises
         -------
-        ClientException
-            If this is called before :meth:`login` was invoked successfully
-            or when an unexpected closure of the websocket occurs.
         GatewayNotFound
             If the gateway to connect to discord is not found. Usually if this
             is thrown then there is a discord API outage.
+        ConnectionClosed
+            The websocket connection has been terminated.
         """
-        self.gateway = yield from self._get_gateway()
-        yield from self._make_websocket()
+        self.ws = yield from DiscordWebSocket.from_client(self)
 
         while not self.is_closed:
-            msg = yield from self.ws.recv()
-            if msg is None:
-                if self.ws.close_code == 1012:
-                    yield from self.redirect_websocket(self.gateway)
-                    continue
-                elif not self._is_ready.is_set():
-                    raise ClientException('Unexpected websocket closure received')
-                else:
-                    yield from self.close()
-                    break
-
-            yield from self.received_message(msg)
+            try:
+                yield from self.ws.poll_event()
+            except ReconnectWebSocket:
+                log.info('Reconnecting the websocket.')
+                self.ws = yield from DiscordWebSocket.from_client(self)
+            except ConnectionClosed as e:
+                yield from self.close()
+                if e.code != 1000:
+                    raise
 
     @asyncio.coroutine
     def close(self):
@@ -586,15 +417,12 @@ class Client:
         if self.is_closed:
             return
 
-        if self.is_voice_connected():
-            yield from self.voice.disconnect()
-            self.voice = None
-
         if self.ws is not None and self.ws.open:
             yield from self.ws.close()
 
-        if self.keep_alive is not None:
-            self.keep_alive.cancel()
+        for voice in list(self.voice_clients):
+            yield from voice.disconnect()
+            self.connection._remove_voice_client(voice.server.id)
 
         yield from self.session.close()
         self._closed.set()
@@ -642,7 +470,10 @@ class Client:
             gathered = asyncio.gather(*pending)
             try:
                 gathered.cancel()
-                self.loop.run_forever()
+                self.loop.run_until_complete(gathered)
+
+                # we want to retrieve any exceptions to make sure that
+                # they don't nag us about it being un-retrieved.
                 gathered.exception()
             except:
                 pass
@@ -922,7 +753,7 @@ class Client:
         r = yield from self.session.post(url, data=utils.to_json(payload), headers=self.headers)
         log.debug(request_logging_format.format(method='POST', response=r))
         yield from utils._verify_successful_response(r)
-        data = yield from r.json()
+        data = yield from r.json(encoding='utf-8')
         log.debug(request_success_log.format(response=r, json=payload, data=data))
         channel = PrivateChannel(id=data['id'], user=user)
         self.connection._add_private_channel(channel)
@@ -1011,7 +842,7 @@ class Client:
 
         resp = yield from self._rate_limit_helper('send_message', 'POST', url, utils.to_json(payload))
         yield from utils._verify_successful_response(resp)
-        data = yield from resp.json()
+        data = yield from resp.json(encoding='utf-8')
         log.debug(request_success_log.format(response=resp, json=payload, data=data))
         channel = self.get_channel(data.get('channel_id'))
         message = Message(channel=channel, **data)
@@ -1114,7 +945,7 @@ class Client:
 
         log.debug(request_logging_format.format(method='POST', response=response))
         yield from utils._verify_successful_response(response)
-        data = yield from response.json()
+        data = yield from response.json(encoding='utf-8')
         msg = 'POST {0.url} returned {0.status} with {1} response'
         log.debug(msg.format(response, data))
         channel = self.get_channel(data.get('channel_id'))
@@ -1148,6 +979,138 @@ class Client:
         log.debug(request_logging_format.format(method='DELETE', response=response))
         yield from utils._verify_successful_response(response)
         yield from response.release()
+
+    @asyncio.coroutine
+    def delete_messages(self, messages):
+        """|coro|
+
+        Deletes a list of messages. This is similar to :func:`delete_message`
+        except it bulk deletes multiple messages.
+
+        The channel to check where the message is deleted from is handled via
+        the first element of the iterable's ``.channel.id`` attributes. If the
+        channel is not consistent throughout the entire sequence, then an
+        :exc:`HTTPException` will be raised.
+
+        Usable only by bot accounts.
+
+        Parameters
+        -----------
+        messages : iterable of :class:`Message`
+            An iterable of messages denoting which ones to bulk delete.
+
+        Raises
+        ------
+        ClientException
+            The number of messages to delete is less than 2 or more than 100.
+        Forbidden
+            You do not have proper permissions to delete the messages or
+            you're not using a bot account.
+        HTTPException
+            Deleting the messages failed.
+        """
+
+        messages = list(messages)
+        if len(messages) > 100 or len(messages) < 2:
+            raise ClientException('Can only delete messages in the range of [2, 100]')
+
+        channel_id = messages[0].channel.id
+        url = '{0}/{1}/messages/bulk_delete'.format(endpoints.CHANNELS, channel_id)
+        payload = {
+            'messages': [m.id for m in messages]
+        }
+
+        response = yield from self.session.post(url, headers=self.headers, data=utils.to_json(payload))
+        log.debug(request_logging_format.format(method='POST', response=response))
+        yield from utils._verify_successful_response(response)
+        yield from response.release()
+
+    @asyncio.coroutine
+    def purge_from(self, channel, *, limit=100, check=None, before=None, after=None):
+        """|coro|
+
+        Purges a list of messages that meet the criteria given by the predicate
+        ``check``. If a ``check`` is not provided then all messages are deleted
+        without discrimination.
+
+        You must have Manage Messages permission to delete messages that aren't
+        your own. The Read Message History permission is also needed to retrieve
+        message history.
+
+        Usable only by bot accounts.
+
+        Parameters
+        -----------
+        channel : :class:`Channel`
+            The channel to purge from.
+        limit : int
+            The number of messages to search through. This is not the number
+            of messages that will be deleted, though it can be.
+        check : predicate
+            The function used to check if a message should be deleted.
+            It must take a :class:`Message` as its sole parameter.
+        before : :class:`Message`
+            The message before scanning for purging must be.
+        after : :class:`Message`
+            The message after scanning for purging must be.
+
+        Raises
+        -------
+        Forbidden
+            You do not have proper permissions to do the actions required or
+            you're not using a bot account.
+        HTTPException
+            Purging the messages failed.
+
+        Examples
+        ---------
+
+        Deleting bot's messages ::
+
+            def is_me(m):
+                return m.author == client.user
+
+            deleted = await client.purge_from(channel, limit=100, check=is_me)
+            await client.send_message(channel, 'Deleted {} message(s)'.format(len(deleted)))
+
+        Returns
+        --------
+        list
+            The list of messages that were deleted.
+        """
+
+        if check is None:
+            check = lambda m: True
+
+        iterator = LogsFromIterator(self, channel, limit, before, after)
+        ret = []
+        count = 0
+
+        while True:
+            try:
+                msg = yield from iterator.iterate()
+            except asyncio.QueueEmpty:
+                # no more messages to poll
+                if count >= 2:
+                    # more than 2 messages -> bulk delete
+                    to_delete = ret[-count:]
+                    yield from self.delete_messages(to_delete)
+                elif count == 1:
+                    # delete a single message
+                    yield from self.delete_message(ret[-1])
+
+                return ret
+            else:
+                if count == 100:
+                    # we've reached a full 'queue'
+                    to_delete = ret[-100:]
+                    yield from self.delete_messages(to_delete)
+                    count = 0
+                    yield from asyncio.sleep(1)
+
+                if check(msg):
+                    count += 1
+                    ret.append(msg)
 
     @asyncio.coroutine
     def edit_message(self, message, new_content):
@@ -1186,7 +1149,7 @@ class Client:
         response = yield from self._rate_limit_helper('edit_message', 'PATCH', url, utils.to_json(payload))
         log.debug(request_logging_format.format(method='PATCH', response=response))
         yield from utils._verify_successful_response(response)
-        data = yield from response.json()
+        data = yield from response.json(encoding='utf-8')
         log.debug(request_success_log.format(response=response, json=payload, data=data))
         return Message(channel=channel, **data)
 
@@ -1252,7 +1215,7 @@ class Client:
         response = yield from self.session.get(url, params=params, headers=self.headers)
         log.debug(request_logging_format.format(method='GET', response=response))
         yield from utils._verify_successful_response(response)
-        messages = yield from response.json()
+        messages = yield from response.json(encoding='utf-8')
         return messages
 
     if PY35:
@@ -1317,7 +1280,7 @@ class Client:
             }
         }
 
-        yield from self._send_ws(utils.to_json(payload))
+        yield from self.ws.send_as_json(payload)
 
     @asyncio.coroutine
     def kick(self, member):
@@ -1531,7 +1494,7 @@ class Client:
         log.debug(request_logging_format.format(method='PATCH', response=r))
         yield from utils._verify_successful_response(r)
 
-        data = yield from r.json()
+        data = yield from r.json(encoding='utf-8')
         log.debug(request_success_log.format(response=r, json=payload, data=data))
 
         if not_bot_account:
@@ -1568,32 +1531,51 @@ class Client:
         InvalidArgument
             If the ``game`` parameter is not :class:`Game` or None.
         """
+        yield from self.ws.change_presence(game=game, idle=idle)
 
-        if game is not None and not isinstance(game, Game):
-            raise InvalidArgument('game must be of Game or None')
+    @asyncio.coroutine
+    def change_nickname(self, member, nickname):
+        """|coro|
 
-        idle_since = None if idle == False else int(time.time() * 1000)
-        sent_game = game and {'name': game.name}
+        Changes a member's nickname.
+
+        You must have the proper permissions to change someone's
+        (or your own) nickname.
+
+        Parameters
+        ----------
+        member : :class:`Member`
+            The member to change the nickname for.
+        nickname : Optional[str]
+            The nickname to change it to. ``None`` to remove
+            the nickname.
+
+        Raises
+        ------
+        Forbidden
+            You do not have permissions to change the nickname.
+        HTTPException
+            Changing the nickname failed.
+        """
+
+        if member == self.user:
+            fmt = '{0}/{1.server.id}/members/@me/nick'
+        else:
+            fmt = '{0}/{1.server.id}/members/{1.id}'
+
+        url = fmt.format(endpoints.SERVERS, member)
 
         payload = {
-            'op': 3,
-            'd': {
-                'game': sent_game,
-                'idle_since': idle_since
-            }
+            # oddly enough, this endpoint requires '' to clear the nickname
+            # instead of the more consistent 'null', this might change in the
+            # future, or not.
+            'nick': nickname if nickname else ''
         }
 
-        sent = utils.to_json(payload)
-        log.debug('Sending "{}" to change status'.format(sent))
-        yield from self._send_ws(sent)
-        for server in self.servers:
-            me = server.me
-            if me is None:
-                continue
-
-            me.game = game
-            status = Status.idle if idle_since else Status.online
-            me.status = status
+        r = yield from self.session.patch(url, data=utils.to_json(payload), headers=self.headers)
+        log.debug(request_logging_format.format(method='PATCH', response=r))
+        yield from utils._verify_successful_response(r)
+        yield from r.release()
 
     # Channel management
 
@@ -1637,7 +1619,7 @@ class Client:
         log.debug(request_logging_format.format(method='PATCH', response=r))
         yield from utils._verify_successful_response(r)
 
-        data = yield from r.json()
+        data = yield from r.json(encoding='utf-8')
         log.debug(request_success_log.format(response=r, json=payload, data=data))
 
     @asyncio.coroutine
@@ -1686,7 +1668,7 @@ class Client:
         log.debug(request_logging_format.format(method='POST', response=response))
         yield from utils._verify_successful_response(response)
 
-        data = yield from response.json()
+        data = yield from response.json(encoding='utf-8')
         log.debug(request_success_log.format(response=response, data=data, json=payload))
         channel = Channel(server=server, **data)
         return channel
@@ -1824,7 +1806,7 @@ class Client:
         r = yield from self.session.post(endpoints.SERVERS, data=utils.to_json(payload), headers=self.headers)
         log.debug(request_logging_format.format(method='POST', response=r))
         yield from utils._verify_successful_response(r)
-        data = yield from r.json()
+        data = yield from r.json(encoding='utf-8')
         log.debug(request_success_log.format(response=r, json=payload, data=data))
         return Server(**data)
 
@@ -1937,7 +1919,7 @@ class Client:
         resp = yield from self.session.get(url, headers=self.headers)
         log.debug(request_logging_format.format(method='GET', response=resp))
         yield from utils._verify_successful_response(resp)
-        data = yield from resp.json()
+        data = yield from resp.json(encoding='utf-8')
         return [User(**user['user']) for user in data]
 
     # Invite management
@@ -2001,7 +1983,7 @@ class Client:
         log.debug(request_logging_format.format(method='POST', response=response))
 
         yield from utils._verify_successful_response(response)
-        data = yield from response.json()
+        data = yield from response.json(encoding='utf-8')
         log.debug(request_success_log.format(json=payload, response=response, data=data))
         self._fill_invite_data(data)
         return Invite(**data)
@@ -2041,7 +2023,7 @@ class Client:
         response = yield from self.session.get(rurl, headers=self.headers)
         log.debug(request_logging_format.format(method='GET', response=response))
         yield from utils._verify_successful_response(response)
-        data = yield from response.json()
+        data = yield from response.json(encoding='utf-8')
         self._fill_invite_data(data)
         return Invite(**data)
 
@@ -2075,7 +2057,7 @@ class Client:
         resp = yield from self.session.get(url, headers=self.headers)
         log.debug(request_logging_format.format(method='GET', response=resp))
         yield from utils._verify_successful_response(resp)
-        data = yield from resp.json()
+        data = yield from resp.json(encoding='utf-8')
         result = []
         for invite in data:
             channel = server.get_channel(invite['channel']['id'])
@@ -2206,7 +2188,7 @@ class Client:
         log.debug(request_logging_format.format(method='PATCH', response=r))
         yield from utils._verify_successful_response(r)
 
-        data = yield from r.json()
+        data = yield from r.json(encoding='utf-8')
         log.debug(request_success_log.format(json=payload, response=r, data=data))
 
     @asyncio.coroutine
@@ -2372,7 +2354,7 @@ class Client:
         log.debug(request_logging_format.format(method='POST', response=r))
         yield from utils._verify_successful_response(r)
 
-        data = yield from r.json()
+        data = yield from r.json(encoding='utf-8')
         everyone = server.id == data.get('id')
         role = Role(everyone=everyone, **data)
 
@@ -2567,48 +2549,80 @@ class Client:
         :class:`VoiceClient`
             A voice client that is fully connected to the voice server.
         """
-
-        if self.is_voice_connected():
-            raise ClientException('Already connected to a voice channel')
-
         if isinstance(channel, Object):
             channel = self.get_channel(channel.id)
 
         if getattr(channel, 'type', ChannelType.text) != ChannelType.voice:
             raise InvalidArgument('Channel passed must be a voice channel')
 
+        server = channel.server
+
+        if self.is_voice_connected(server):
+            raise ClientException('Already connected to a voice channel in this server')
+
         log.info('attempting to join voice channel {0.name}'.format(channel))
 
-        payload = {
-            'op': 4,
-            'd': {
-                'guild_id': channel.server.id,
-                'channel_id': channel.id,
-                'self_mute': False,
-                'self_deaf': False
-            }
-        }
+        def session_id_found(data):
+            user_id = data.get('user_id')
+            return user_id == self.user.id
 
-        yield from self._send_ws(utils.to_json(payload))
-        yield from asyncio.wait_for(self._session_id_found.wait(), timeout=5.0, loop=self.loop)
-        yield from asyncio.wait_for(self._voice_data_found.wait(), timeout=5.0, loop=self.loop)
+        # register the futures for waiting
+        session_id_future = self.ws.wait_for('VOICE_STATE_UPDATE', session_id_found)
+        voice_data_future = self.ws.wait_for('VOICE_SERVER_UPDATE', lambda d: True)
 
-        self._session_id_found.clear()
-        self._voice_data_found.clear()
+        # request joining
+        yield from self.ws.voice_state(server.id, channel.id)
+        session_id_data = yield from asyncio.wait_for(session_id_future, timeout=10.0, loop=self.loop)
+        data = yield from asyncio.wait_for(voice_data_future, timeout=10.0, loop=self.loop)
 
         kwargs = {
             'user': self.user,
             'channel': channel,
-            'data': self._voice_data_found.data,
+            'data': data,
             'loop': self.loop,
-            'session_id': self.session_id,
+            'session_id': session_id_data.get('session_id'),
             'main_ws': self.ws
         }
 
-        self.voice = VoiceClient(**kwargs)
-        yield from self.voice.connect()
-        return self.voice
+        voice = VoiceClient(**kwargs)
+        try:
+            yield from voice.connect()
+        except asyncio.TimeoutError as e:
+            try:
+                yield from voice.disconnect()
+            except:
+                # we don't care if disconnect failed because connection failed
+                pass
+            raise e # re-raise
 
-    def is_voice_connected(self):
-        """bool : Indicates if we are currently connected to a voice channel."""
-        return self.voice is not None and self.voice.is_connected()
+        self.connection._add_voice_client(server.id, voice)
+        return voice
+
+    def is_voice_connected(self, server):
+        """Indicates if we are currently connected to a voice channel in the
+        specified server.
+
+        Parameters
+        -----------
+        server : :class:`Server`
+            The server to query if we're connected to it.
+        """
+        voice = self.voice_client_in(server)
+        return voice is not None
+
+    def voice_client_in(self, server):
+        """Returns the voice client associated with a server.
+
+        If no voice client is found then ``None`` is returned.
+
+        Parameters
+        -----------
+        server : :class:`Server`
+            The server to query if we have a voice client for.
+
+        Returns
+        --------
+        :class:`VoiceClient`
+            The voice client associated with the server.
+        """
+        return self.connection._get_voice_client(server.id)
