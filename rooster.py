@@ -35,7 +35,7 @@ async def topic(ctx, *motd: str):
 
 
 @bot.command(pass_context=True, description='Mute a given user')
-@commands.has_role("Director")
+@commands.has_any_role("Director", "Leadership")
 async def mute(ctx, user: discord.Member):
     server = ctx.message.server
     await bot.add_roles(user, discord.utils.get(server.roles, name="Time-OUT"))
