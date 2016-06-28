@@ -176,8 +176,8 @@ async def killwatch():
         return
     logging.info('killwatch alive on the following servers:')
     logging.info(bot.servers)
-    for channel in channels:
-        await bot.send_message(channel, "**KILL ALERT** is running! {:,}ISK Alliance Threshhold:{:,} Big isk Threshold <BETA>".format(VALUE, BIGVALUE))
+    #for channel in channels:
+        #await bot.send_message(channel, "**KILL ALERT** is running! {:,}ISK Alliance Threshhold:{:,} Big isk Threshold <BETA>".format(VALUE, BIGVALUE))
 
     while not bot.is_closed:
         try:
