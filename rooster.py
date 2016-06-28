@@ -166,12 +166,18 @@ async def no(ctx):
 async def killwatch():
     await bot.wait_until_ready()
 
-    channel = discord.utils.get(bot.get_all_channels(), name='alliance')
-    if not channel:
-        logging.warning('That Channel isnt on the server, killwatch not running')
+    #channel = discord.utils.get(bot.get_all_channels(), name='alliance')
+    channels = []
+    for chan in bot.get_all_channels():
+        if chan.name == 'alliance':
+            channels.append(chan)
+    if not channels:
+        logging.warning('no channels for kill announcing, killwatch not running')
         return
-    logging.info('killwatch alive')
-    #await bot.send_message(channel, "**KILL ALERT** is running! {:,}ISK Alliance Threshhold:{:,} Big isk Threshold <BETA>".format(VALUE, BIGVALUE))
+    logging.info('killwatch alive on the following servers:')
+    logging.info(bot.servers)
+    for channel in channels:
+        await bot.send_message(channel, "**KILL ALERT** is running! {:,}ISK Alliance Threshhold:{:,} Big isk Threshold <BETA>".format(VALUE, BIGVALUE))
 
     while not bot.is_closed:
         try:
@@ -186,18 +192,21 @@ async def killwatch():
             if 'alliance' in stream['package']['killmail']['victim']:
                 if stream['package']['killmail']['victim']['alliance']['id'] == ALLIANCE:
                     if stream['package']['zkb']['totalValue'] >= VALUE:
-                        await bot.send_message(channel, "**VICTIM ALERT**\nhttps://zkillboard.com/kill/{}/".format(
+                        for channel in channels:
+                            await bot.send_message(channel, "**VICTIM ALERT**\nhttps://zkillboard.com/kill/{}/".format(
                                                         stream['package']['killID']))
                         continue
             for attacker in stream['package']['killmail']['attackers']:
                 if 'alliance' in attacker:
                     if attacker['alliance']['id'] == ALLIANCE:
                         if stream['package']['zkb']['totalValue'] >= VALUE:
-                            await bot.send_message(channel, "**KILL ALERT**\nhttps://zkillboard.com/kill/{}/".
+                            for channel in channels:
+                                await bot.send_message(channel, "**KILL ALERT**\nhttps://zkillboard.com/kill/{}/".
                                                             format(stream['package']['killID']))
                             break
             if stream['package']['zkb']['totalValue'] >= BIGVALUE:
-                await bot.send_message(channel, "**BIG KILL ALERT**\nhttps://zkillboard.com/kill/{}/".
+                for channel in channels:
+                    await bot.send_message(channel, "**BIG KILL ALERT**\nhttps://zkillboard.com/kill/{}/".
                                        format(stream['package']['killID']))
 
 
