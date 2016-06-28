@@ -25,7 +25,6 @@ VALUE = 500000000
 BIGVALUE = 25000000000
 
 bot = commands.Bot(command_prefix='!', description='Rooster knows all...')
-bot.change_status(game=discord.Game(name='Hello'))
 
 @bot.command(pass_context=True, description="Change the MOTD of a channel")
 @commands.has_role("Director")
@@ -34,17 +33,18 @@ async def topic(ctx, *motd: str):
     await bot.edit_channel(channel=ctx.message.channel, topic=motd)
     await bot.say('{} has changed the topic to _{}_'.format(ctx.message.author.name, motd))
 
-@bot.command(description='Mute a given user')
+
+@bot.command(pass_context=True, description='Mute a given user')
 @commands.has_role("Director")
-async def mute(user: discord.Member):
-    server = discord.utils.get(bot.servers, name='J4LP')
+async def mute(ctx, user: discord.Member):
+    server = ctx.message.server
     await bot.add_roles(user, discord.utils.get(server.roles, name="Time-OUT"))
 
 
-@bot.command(description='Unmute a given user')
+@bot.command(pass_context=True, description='Unmute a given user')
 @commands.has_role("Director")
-async def unmute(user: discord.Member):
-    server = discord.utils.get(bot.servers, name='J4LP')
+async def unmute(ctx, user: discord.Member):
+    server = ctx.message.server
     await bot.remove_roles(user, discord.utils.get(server.roles, name='Time-OUT'))
 
 @bot.listen('on_message')
