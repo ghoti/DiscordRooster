@@ -24,12 +24,12 @@ def insure(ship=None):
             for level in item['insurance']:
                 if level['level'] == 'Platinum':
                     #shelfrates[item['type']['name']] = {'cost' : level['cost'], 'payout' : level['payout']}
-                    shelfrates[item['type']['name']] = level
+                    shelfrates[item['type']['name'].lower()] = level
                     print('added {} with {}'.format(item['type']['name'],level['payout']))
 
         shelfrates['cache'] = now.replace(seconds=INSURANCE_CACHETIMER)
 
-    if ship in shelfrates.keys():
+    if ship.lower() in shelfrates.keys():
         return 'Platinum insurance for {} costs {:,.2f} ISK and pays out {:,.2f} ISK'.format(ship, shelfrates[ship]['cost'], shelfrates[ship]['payout'])
     else:
         return 'Ship not found, try again (Case Sensitive)'
