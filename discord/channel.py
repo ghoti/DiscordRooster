@@ -23,9 +23,9 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 """
 
-from copy import deepcopy
+import copy
 from . import utils
-from .permissions import Permissions
+from .permissions import Permissions, PermissionOverwrite
 from .enums import ChannelType
 from collections import namedtuple
 from .mixins import Hashable
@@ -33,7 +33,6 @@ from .role import Role
 from .member import Member
 
 Overwrites = namedtuple('Overwrites', 'id allow deny type')
-PermissionOverwrite = namedtuple('PermissionOverwrite', 'allow deny')
 
 class Channel(Hashable):
     """Represents a Discord server channel.
@@ -74,13 +73,16 @@ class Channel(Hashable):
         the channel type is not within the ones recognised by the enumerator.
     bitrate : int
         The channel's preferred audio bitrate in bits per second.
-    changed_roles
-        A list of :class:`Roles` that have been overridden from their default
-        values in the :attr:`Server.roles` attribute.
     voice_members
         A list of :class:`Members` that are currently inside this voice channel.
         If :attr:`type` is not :attr:`ChannelType.voice` then this is always an empty array.
+    user_limit : int
+        The channel's limit for number of members that can be in a voice channel.
     """
+
+    __slots__ = [ 'voice_members', 'name', 'id', 'server', 'topic', 'position',
+                  'is_private', 'type', 'bitrate', 'user_limit',
+                  '_permission_overwrites' ]
 
     def __init__(self, **kwargs):
         self._update(**kwargs)
@@ -98,15 +100,15 @@ class Channel(Hashable):
         self.position = kwargs.get('position')
         self.bitrate = kwargs.get('bitrate')
         self.type = kwargs.get('type')
+        self.user_limit = kwargs.get('user_limit')
         try:
             self.type = ChannelType(self.type)
         except:
             pass
 
-        self.changed_roles = []
         self._permission_overwrites = []
         everyone_index = 0
-        everyone_id = self.server.default_role.id
+        everyone_id = self.server.id
 
         for index, overridden in enumerate(kwargs.get('permission_overwrites', [])):
             overridden_id = overridden['id']
@@ -123,21 +125,25 @@ class Channel(Hashable):
                 # swap it to be the first one.
                 everyone_index = index
 
-            # this is pretty inefficient due to the deep nested loops unfortunately
-            role = utils.find(lambda r: r.id == overridden_id, self.server.roles)
-            if role is None:
-                continue
-
-            denied = overridden.get('deny', 0)
-            allowed = overridden.get('allow', 0)
-            override = deepcopy(role)
-            override.permissions.handle_overwrite(allowed, denied)
-            self.changed_roles.append(override)
-
         # do the swap
         tmp = self._permission_overwrites
         if tmp:
             tmp[everyone_index], tmp[0] = tmp[0], tmp[everyone_index]
+
+    @property
+    def changed_roles(self):
+        """Returns a list of :class:`Roles` that have been overridden from
+        their default values in the :attr:`Server.roles` attribute."""
+        ret = []
+        for overwrite in filter(lambda o: o.type == 'role', self._permission_overwrites):
+            role = utils.get(self.server.roles, id=overwrite.id)
+            if role is None:
+                continue
+
+            role = copy.copy(role)
+            role.permissions.handle_overwrite(overwrite.allow, overwrite.deny)
+            ret.append(role)
+        return ret
 
     @property
     def is_default(self):
@@ -155,17 +161,18 @@ class Channel(Hashable):
         return utils.snowflake_time(self.id)
 
     def overwrites_for(self, obj):
-        """Returns a namedtuple that gives you the channel-specific overwrites
-        for a member or a role.
-
-        The named tuple is a tuple of (allow, deny) :class:`Permissions`
-        with the appropriately named entries.
+        """Returns the channel-specific overwrites for a member or a role.
 
         Parameters
         -----------
         obj
             The :class:`Role` or :class:`Member` or :class:`Object` denoting
             whose overwrite to get.
+
+        Returns
+        ---------
+        :class:`PermissionOverwrite`
+            The permission overwrites for this object.
         """
 
         if isinstance(obj, Member):
@@ -177,10 +184,11 @@ class Channel(Hashable):
 
         for overwrite in filter(predicate, self._permission_overwrites):
             if overwrite.id == obj.id:
-                return PermissionOverwrite(allow=Permissions(overwrite.allow),
-                                           deny=Permissions(overwrite.deny))
+                allow = Permissions(overwrite.allow)
+                deny = Permissions(overwrite.deny)
+                return PermissionOverwrite.from_pair(allow, deny)
 
-        return PermissionOverwrite(allow=Permissions.none(), deny=Permissions.none())
+        return PermissionOverwrite()
 
     def permissions_for(self, member):
         """Handles permission resolution for the current :class:`Member`.

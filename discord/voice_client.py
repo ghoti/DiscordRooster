@@ -57,7 +57,7 @@ log = logging.getLogger(__name__)
 
 from . import utils, opus
 from .gateway import *
-from .errors import ClientException, InvalidArgument
+from .errors import ClientException, InvalidArgument, ConnectionClosed
 
 class StreamPlayer(threading.Thread):
     def __init__(self, stream, encoder, connected, player, after, **kwargs):
@@ -73,6 +73,9 @@ class StreamPlayer(threading.Thread):
         self.after = after
         self.delay = encoder.frame_length / 1000.0
         self._volume = 1.0
+
+        if after is not None and not callable(after):
+            raise TypeError('Expected a callable for the "after" parameter.')
 
     def run(self):
         self.loops = 0
@@ -104,7 +107,7 @@ class StreamPlayer(threading.Thread):
 
     def stop(self):
         self._end.set()
-        if callable(self.after):
+        if self.after is not None:
             try:
                 self.after()
             except:
@@ -225,6 +228,22 @@ class VoiceClient:
                 self._connected.set()
                 break
 
+        self.loop.create_task(self.poll_voice_ws())
+
+    @asyncio.coroutine
+    def poll_voice_ws(self):
+        """|coro|
+        Reads from the voice websocket while connected.
+        """
+        while self._connected.is_set():
+            try:
+                yield from self.ws.poll_event()
+            except ConnectionClosed as e:
+                if e.code == 1000:
+                    break
+                else:
+                    raise
+
     @asyncio.coroutine
     def disconnect(self):
         """|coro|
@@ -237,10 +256,12 @@ class VoiceClient:
         if not self._connected.is_set():
             return
 
-        self.socket.close()
         self._connected.clear()
-        yield from self.ws.close()
-        yield from self.main_ws.voice_state(self.guild_id, None, self_mute=True)
+        try:
+            yield from self.ws.close()
+            yield from self.main_ws.voice_state(self.guild_id, None, self_mute=True)
+        finally:
+            self.socket.close()
 
     @asyncio.coroutine
     def move_to(self, channel):
@@ -425,7 +446,7 @@ class VoiceClient:
         | player.views        | How many views the audio stream has.                    |
         +---------------------+---------------------------------------------------------+
 
-        .. _ytdl: https://github.com/rg3/youtube-dl/blob/master/youtube_dl/YoutubeDL.py#L117-L265
+        .. _ytdl: https://github.com/rg3/youtube-dl/blob/master/youtube_dl/YoutubeDL.py#L128-L278
 
         Examples
         ----------
@@ -443,7 +464,7 @@ class VoiceClient:
             to ``ffmpeg`` or ``avconv`` to convert to PCM bytes.
         ytdl_options : dict
             A dictionary of options to pass into the ``YoutubeDL`` instance.
-            See `the documentation <ydl>`_ for more details.
+            See `the documentation <ytdl>`_ for more details.
         \*\*kwargs
             The rest of the keyword arguments are forwarded to
             :func:`create_ffmpeg_player`.
