@@ -27,7 +27,7 @@ BIGVALUE = 25000000000
 bot = commands.Bot(command_prefix='!', description='Rooster knows all...')
 
 @bot.command(pass_context=True, description="Change the MOTD of a channel")
-@commands.has_role("Director")
+@commands.has_any_role("Director", "Leadership")
 async def topic(ctx, *motd: str):
     motd = ' '.join(motd)
     await bot.edit_channel(channel=ctx.message.channel, topic=motd)
@@ -42,7 +42,7 @@ async def mute(ctx, user: discord.Member):
 
 
 @bot.command(pass_context=True, description='Unmute a given user')
-@commands.has_role("Director")
+@commands.has_any_role("Director", "Leadership")
 async def unmute(ctx, user: discord.Member):
     server = ctx.message.server
     await bot.remove_roles(user, discord.utils.get(server.roles, name='Time-OUT'))
