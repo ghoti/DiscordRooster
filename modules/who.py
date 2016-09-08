@@ -1,5 +1,6 @@
 import arrow
 import evelink.api
+import asyncio
 import evelink.corp
 import evelink.eve
 from html.parser import HTMLParser
@@ -44,7 +45,7 @@ def who(toon):
 
 def activity(id):
     try:
-        zkill = requests.get("https://zkillboard.com/api/kills/characterID/{}/".format(id.result))
+        zkill = requests.get("https://zkillboard.com/api/kills/characterID/{}/".format(id.result), timeout=5)
         zkill = zkill.json()
         lastkill = arrow.get(zkill[0]['killTime'], 'YYYY-MM-DD HH:mm:ss')
         return lastkill.humanize()
@@ -83,7 +84,7 @@ def killstats(id):
     '''
 
     try:
-        r = requests.get('https://zkillboard.com/api/stats/characterID/{}/'.format(id.result), timeout=10)
+        r = requests.get('https://zkillboard.com/api/stats/characterID/{}/'.format(id.result), timeout=5)
     except TimeoutError:
         return '[ERROR AT ZKILL]'
 
