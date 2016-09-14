@@ -59,7 +59,7 @@ async def on_message(message):
     if message.author == bot.user:
         return
     if discord.utils.get(message.author.roles, name='Time-OUT'):
-        await bot.delete_message(message.content)
+        await bot.delete_message(message)
 
     if re.match(FIT_PARSE, message.content):
         eft = re.search('\[(?P<SHIP>.+?), (?P<NAME>.+)]', message.content)
