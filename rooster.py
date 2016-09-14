@@ -21,11 +21,11 @@ import modules.weather
 import modules.who
 import modules.insurance
 
-ALLIANCE = 99006254
+ALLIANCE = 1900696668
 #ALLIANCE = 99002172
 #ALLIANCE = 1354830081
 VALUE = 500000000
-BIGVALUE = 25000000000
+BIGVALUE = 20000000000
 
 FIT_PARSE = re.compile('\[.+?, .+]')
 OSMIUM_URL = 'https://o.smium.org/api/json/loadout/eft/attributes/loc:ship,a:tank,a:ehpAndResonances,a:capacitors,a:damage,a:priceEstimateTotal?input={}'
