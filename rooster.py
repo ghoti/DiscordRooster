@@ -3,9 +3,12 @@ import arrow
 import asyncio
 import logging
 from html.parser import HTMLParser
+from datetime import timedelta
 import discord
 from discord.ext import commands
 from time import sleep
+import re
+import requests
 import shelve
 import websockets
 from fuzzywuzzy import fuzz
@@ -23,6 +26,9 @@ ALLIANCE = 99006254
 #ALLIANCE = 1354830081
 VALUE = 500000000
 BIGVALUE = 25000000000
+
+FIT_PARSE = re.compile('\[.+?, .+]')
+OSMIUM_URL = 'https://o.smium.org/api/json/loadout/eft/attributes/loc:ship,a:tank,a:ehpAndResonances,a:capacitors,a:damage,a:priceEstimateTotal?input={}'
 
 bot = commands.Bot(command_prefix='!', description='Rooster knows all...')
 
@@ -47,12 +53,36 @@ async def unmute(ctx, user: discord.Member):
     server = ctx.message.server
     await bot.remove_roles(user, discord.utils.get(server.roles, name='Time-OUT'))
 
+
 @bot.listen('on_message')
 async def on_message(message):
     if message.author == bot.user:
         return
     if discord.utils.get(message.author.roles, name='Time-OUT'):
-        await bot.delete_message(message)
+        await bot.delete_message(message.content)
+
+    if re.match(FIT_PARSE, message.content):
+        eft = re.search('\[(?P<SHIP>.+?), (?P<NAME>.+)]', message.content)
+        name = eft.group('NAME')
+        ship = eft.group('SHIP')
+        r = requests.get(OSMIUM_URL.format(message.content), timeout=5)
+        try:
+            stats = ''
+            fit = r.json()
+            stats += '```Basic stats for {} - {} (ALL V\'s)\n'.format(ship, name)
+            stats += 'Expected EHP (omni): {:,.2f}\n'.format(fit['ship']['ehpAndResonances']['ehp']['avg'])
+            if fit['ship']['capacitors']['local']['stable']:
+                stats += 'Cap Stable!\n'
+            else:
+                cap = timedelta(milliseconds=fit['ship']['capacitors']['local']['depletion_time'])
+                stats += 'Expected cap time: {}\n'.format(cap)
+            stats += 'Expected DPS/Volley: {:.2f}/{:.2f}\n'.format(fit['ship']['damage']['total']['dps'],
+                                                                           fit['ship']['damage']['total']['volley'])
+            stats += 'Estimated cost: {:,.2f}```'.format(fit['ship']['priceEstimateTotal']['ship']+fit['ship']['priceEstimateTotal']['fitting'])
+            await bot.send_message(destination=message.channel, content=stats)
+        except Exception as e:
+            print(e)
+            pass
 
 
 @bot.command(description="Get's the current weather as a city, or in CCP's office if none provided")
@@ -97,6 +127,7 @@ async def fweight(*toon: str):
     toon = ' '.join(toon)
     status = modules.fweight.fweight(toon)
     await bot.say(status)
+
 
 @bot.command(description="Get Platinum insurance rate for a ship")
 async def insure(*ship: str):
