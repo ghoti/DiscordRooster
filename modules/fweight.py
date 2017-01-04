@@ -43,7 +43,7 @@ def get_user_contracts(id, contracts):
     completed = 0
     inprogress = 0
 
-    now = arrow.utcnow().replace(month=1)
+    now = arrow.utcnow().replace(months=-1)
     for contract in contracts:
         if contracts[contract]['issuer'] == id and now < arrow.get(str(contracts[contract]['issued'])):
             if contracts[contract]['status'] == 'Completed':
@@ -62,7 +62,7 @@ def get_total_contracts(contracts):
     inprogress = 0
 
     for contract in contracts:
-        now = arrow.utcnow().replace(month=1)
+        now = arrow.utcnow().replace(months=-1)
         if now < arrow.get(contracts[contract]['issued']):
             if contracts[contract]['status'] == 'Completed':
                 completed += 1
