@@ -224,6 +224,11 @@ async def killwatch():
             await asyncio.sleep(10)
             stream['package'] = None
         if stream['package']:
+            # Check the KM isn't old yet
+            kill_time = arrow.get(stream['package']['killmail']['killTime'], 'YYYY.MM.DD HH:mm:ss')
+            if kill_time < arrow.utcnow().shift(days=-2):
+                continue
+
             if 'alliance' in stream['package']['killmail']['victim']:
                 if stream['package']['killmail']['victim']['alliance']['id'] == ALLIANCE:
                     if stream['package']['zkb']['totalValue'] >= VALUE:
