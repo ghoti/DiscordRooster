@@ -306,7 +306,7 @@ async def trivia():
         await asyncio.sleep(5)
 
 
-@bot.command(pass_context=True, description="Grabs or stores a quote from discord.")
+@bot.command(description="Grabs or stores a quote from discord.")
 async def q(*quote_key: str):
     await bot.wait_until_ready()
     try:
