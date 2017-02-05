@@ -14,7 +14,7 @@ def load_archives():
 
 
 def write_archives():
-    with open(ARCHIVING_FILE, 'r') as f:
+    with open(ARCHIVING_FILE, 'w') as f:
         json.dump(CACHE, f)
 
 
