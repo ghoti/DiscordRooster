@@ -20,6 +20,8 @@ import modules.time
 import modules.weather
 import modules.who
 import modules.insurance
+import modules.quote
+from modules import quote
 
 ALLIANCE = 1900696668
 #ALLIANCE = 99002172
@@ -31,6 +33,7 @@ FIT_PARSE = re.compile('\[.+?, .+]')
 OSMIUM_URL = 'https://o.smium.org/api/json/loadout/eft/attributes/loc:ship,a:tank,a:ehpAndResonances,a:capacitors,a:damage,a:priceEstimateTotal?input={}'
 
 bot = commands.Bot(command_prefix='!', description='Rooster knows all...')
+
 
 @bot.command(pass_context=True, description="Change the MOTD of a channel")
 @commands.has_any_role("Director", "Leadership")
@@ -194,6 +197,7 @@ async def no(ctx):
     else:
         await bot.say("There is currently no vote in progress")
 
+
 async def killwatch():
     await bot.wait_until_ready()
 
@@ -300,6 +304,36 @@ async def trivia():
                                 stats[guess.author.name] = 1
                         break
         await asyncio.sleep(5)
+
+
+@bot.command(pass_context=True, description="Grabs or stores a quote from discord.")
+async def q(*quote_key: str):
+    await bot.wait_until_ready()
+    try:
+        key = quote_key[0]
+    except IndexError:
+        await bot.say("You will have to give me a key to be funny.")
+        return
+
+    logging.info("posted a quote, key {}".format(key))
+    resp = quote.get_quote(key)
+    await bot.say(resp)
+
+
+@bot.command(description="Remembers a quote")
+async def remember(*input: str):
+    await bot.wait_until_ready()
+    try:
+        key = input[0]
+        value = ' '.join(input[1:])
+    except IndexError:
+        await bot.say("Not enough to make a quote.")
+        return
+
+    logging.info("Storing quote, key: '{}', value: '{}'".format(key, value))
+    quote.store_quote(key, value)
+    await bot.say("Got it.")
+
 
 @bot.event
 async def on_ready():
