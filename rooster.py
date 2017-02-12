@@ -335,6 +335,23 @@ async def remember(*input: str):
     await bot.say("Got it.")
 
 
+@bot.command(description="Forgets a key in the quote list.")
+async def forget(*input: str):
+    await bot.wait_until_ready()
+    try:
+        key = input[0]
+        quote.delete_quote(key)
+        await bot.say("k.")
+    except IndexError:
+        await bot.say("I will not have blanket amnesia, thank you.")
+
+
+@bot.command(description="Lists all possible quote keys, but not the values.")
+async def quotes():
+    await bot.wait_until_ready()
+    await bot.say(quote.get_key_list())
+
+
 @bot.event
 async def on_ready():
     logging.info('Logged in as')
