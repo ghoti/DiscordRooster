@@ -34,8 +34,6 @@ OSMIUM_URL = 'https://o.smium.org/api/json/loadout/eft/attributes/loc:ship,a:tan
 
 bot = commands.Bot(command_prefix='!', description='Rooster knows all...')
 
-async def is_typing(desto):
-    await bot.send_typing(destination=desto)
 
 @bot.command(pass_context=True, description="Change the MOTD of a channel")
 @commands.has_any_role("Director", "Leadership")
@@ -141,7 +139,6 @@ async def fweight(ctx, *toon: str):
 async def insure(ctx, *ship: str):
     '''
     Insurance rate (platinum) for a given ship
-    CASE SENSITIVE
     '''
     await bot.send_typing(destination=ctx.message.channel)
     logging.info("Caught !insure with paramaters: {}".format(ship))
