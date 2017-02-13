@@ -5,6 +5,7 @@ import shelve
 CREST_INSURANCE = 'https://crest-tq.eveonline.com/insuranceprices/'
 INSURANCE_CACHETIMER = 3600
 
+
 def insure(ship=None):
     if not ship:
         return 'NEED SHIP TO INSURE PLS'
@@ -19,20 +20,25 @@ def insure(ship=None):
 
         crestrates = requests.get(CREST_INSURANCE)
 
-        #grab only the plat rate (for now) for each ship
+        # grab only the plat rate (for now) for each ship
         for item in crestrates.json()['items']:
             for level in item['insurance']:
                 if level['level'] == 'Platinum':
-                    #shelfrates[item['type']['name']] = {'cost' : level['cost'], 'payout' : level['payout']}
+                    # shelfrates[item['type']['name']] = {'cost' : level['cost'], 'payout' : level['payout']}
                     shelfrates[item['type']['name'].lower()] = level
-                    print('added {} with {}'.format(item['type']['name'],level['payout']))
+                    print('added {} with {}'.format(item['type']['name'], level['payout']))
 
         shelfrates['cache'] = now.replace(seconds=INSURANCE_CACHETIMER)
 
     if ship.lower() in shelfrates.keys():
-        return 'Platinum insurance for {} costs {:,.2f} ISK and pays out {:,.2f} ISK'.format(ship, shelfrates[ship]['cost'], shelfrates[ship]['payout'])
+        return 'Platinum insurance for {} costs {:,.2f} ISK and pays out {:,.2f} ISK'.format(ship,
+                                                                                             shelfrates[ship.lower()][
+                                                                                                 'cost'],
+                                                                                             shelfrates[ship.lower()][
+                                                                                                 'payout'])
     else:
-        return 'Ship not found, try again (Case Sensitive)'
+        return 'Ship not found, try again.'
+
 
 if __name__ == '__main__':
     print(insure('Punisher'))
