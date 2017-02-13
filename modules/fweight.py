@@ -62,14 +62,16 @@ def get_total_contracts(contracts):
     inprogress = 0
 
     for contract in contracts:
+        print(contracts[contract])
         now = arrow.utcnow().replace(months=-1)
-        if now < arrow.get(contracts[contract]['issued']):
-            if contracts[contract]['status'] == 'Completed':
-                completed += 1
-            elif contracts[contract]['status'] == 'Outstanding':
-                outstanding += 1
-            elif contracts[contract]['status'] == 'InProgress':
-                inprogress += 1
+        if contracts[contract]['type'] == 'Courier':
+            if now < arrow.get(contracts[contract]['issued']):
+                if contracts[contract]['status'] == 'Completed':
+                    completed += 1
+                elif contracts[contract]['status'] == 'Outstanding':
+                    outstanding += 1
+                elif contracts[contract]['status'] == 'InProgress':
+                    inprogress += 1
 
     return outstanding, completed, inprogress
 
