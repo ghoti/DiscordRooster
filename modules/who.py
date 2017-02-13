@@ -10,7 +10,6 @@ from config.credentials import CORP_KEYID, CORP_VCODE
 
 
 def who(toon):
-
     if not toon:
         return 'NEED A NAME WTF'
 
@@ -30,15 +29,16 @@ def who(toon):
 
         if alliance:
             return "```{} (Born {})\n{} SecStatus with {}\nJoined {} {} ({})\nLast seen {}```".format(
-                    name, age, secstatus, stats, corp, corpsince, alliance, lastseen)
+                name, age, secstatus, stats, corp, corpsince, alliance, lastseen)
         else:
             return "```{} (Born {})\n{} SecStatus with {}\nJoined {} {}\nLast seen {}```".format(
-                    name, age, secstatus, stats, corp, corpsince, lastseen)
+                name, age, secstatus, stats, corp, corpsince, lastseen)
     except evelink.api.APIError:
         try:
-            #and here we fail if we supplied an alliance name, oof
+            # and here we fail if we supplied an alliance name, oof
             name, ticker, alliance, desc, ceo, members = corpinfo(id)
-            return "``` {} <{}>\n{}\nAlliance: {}\nCEO: {}\nMembers: {}```".format(name, ticker, desc, alliance, ceo, members)
+            return "``` {} <{}>\n{}\nAlliance: {}\nCEO: {}\nMembers: {}```".format(name, ticker, desc, alliance, ceo,
+                                                                                   members)
         except evelink.api.APIError:
             return "Seems you supplied an alliance name, soonTM"
 
@@ -107,14 +107,17 @@ class MLStripper(HTMLParser):
     '''
     Simple, no nonsense, make things unpretty html stripper for descriptions
     '''
+
     def __init__(self):
         super().__init__()
         self.reset()
         self.strict = False
-        self.convert_charrefs= True
+        self.convert_charrefs = True
         self.fed = []
+
     def handle_data(self, d):
         self.fed.append(d)
+
     def get_data(self):
         return ''.join(self.fed)
 
@@ -123,6 +126,7 @@ def strip_tags(html):
     s = MLStripper()
     s.feed(html)
     return s.get_data()
+
 
 if __name__ == "__main__":
     proper = who('Chainsaw McGinny')

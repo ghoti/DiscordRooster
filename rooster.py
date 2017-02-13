@@ -34,6 +34,8 @@ OSMIUM_URL = 'https://o.smium.org/api/json/loadout/eft/attributes/loc:ship,a:tan
 
 bot = commands.Bot(command_prefix='!', description='Rooster knows all...')
 
+async def is_typing(desto):
+    await bot.send_typing(destination=desto)
 
 @bot.command(pass_context=True, description="Change the MOTD of a channel")
 @commands.has_any_role("Director", "Leadership")
@@ -111,22 +113,24 @@ async def time():
     await bot.say(modules.time.time())
 
 
-@bot.command(description="info about a player.  name, age, sec status, stats, corp info, and last kb activity")
-async def who(*toon: str):
+@bot.command(pass_context=True, description="info about a player.  name, age, sec status, stats, corp info, and last kb activity")
+async def who(ctx, *toon: str):
     '''
     Basic Public info about a given EVE Character
     '''
+    await bot.send_typing(destination=ctx.message.channel)
     logging.info('Caught !who with paramaters: {}'.format(toon))
     toon = ' '.join(toon)
     info = modules.who.who(toon)
     await bot.say(info)
 
 
-@bot.command(description="Get a user's contract status(es) from fweight (or totals if none given")
-async def fweight(*toon: str):
+@bot.command(pass_context=True, description="Get a user's contract status(es) from fweight (or totals if none given")
+async def fweight(ctx, *toon: str):
     '''
     Status(es) of pending fweight contracts
     '''
+    await bot.send_typing(destination=ctx.message.channel)
     logging.info("Caught !fweight with paramaters: {}".format(toon))
     toon = ' '.join(toon)
     status = modules.fweight.fweight(toon)
