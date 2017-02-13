@@ -24,8 +24,8 @@ import modules.quote
 from modules import quote
 
 ALLIANCE = 1900696668
-#ALLIANCE = 99002172
-#ALLIANCE = 1354830081
+# ALLIANCE = 99002172
+# ALLIANCE = 1354830081
 VALUE = 500000000
 BIGVALUE = 20000000000
 
@@ -80,8 +80,9 @@ async def on_message(message):
                 cap = timedelta(milliseconds=fit['ship']['capacitors']['local']['depletion_time'])
                 stats += 'Expected cap time: {}\n'.format(cap)
             stats += 'Expected DPS/Volley: {:.2f}/{:.2f}\n'.format(fit['ship']['damage']['total']['dps'],
-                                                                           fit['ship']['damage']['total']['volley'])
-            stats += 'Estimated cost: {:,.2f}```'.format(fit['ship']['priceEstimateTotal']['ship']+fit['ship']['priceEstimateTotal']['fitting'])
+                                                                   fit['ship']['damage']['total']['volley'])
+            stats += 'Estimated cost: {:,.2f}```'.format(
+                fit['ship']['priceEstimateTotal']['ship'] + fit['ship']['priceEstimateTotal']['fitting'])
             await bot.send_message(destination=message.channel, content=stats)
         except Exception as e:
             print(e)
@@ -110,7 +111,7 @@ async def time():
     await bot.say(modules.time.time())
 
 
-@bot.command(description = "info about a player.  name, age, sec status, stats, corp info, and last kb activity")
+@bot.command(description="info about a player.  name, age, sec status, stats, corp info, and last kb activity")
 async def who(*toon: str):
     '''
     Basic Public info about a given EVE Character
@@ -145,7 +146,7 @@ async def insure(*ship: str):
 
 
 @bot.command(pass_context=True, description="Call a vote for 30 seconds")
-async def vote(ctx, *question : str):
+async def vote(ctx, *question: str):
     '''
     Call a vote for 30 seconds.  ex: !vote Is Chainsaw amazing?
     '''
@@ -155,10 +156,12 @@ async def vote(ctx, *question : str):
         return
     else:
         question = ' '.join(question).strip()
-        msg = await bot.say('{} has called a vote!\n**{}**\nVoting enabled for 30 seconds!'.format(ctx.message.author.name, question))
+        msg = await bot.say(
+            '{} has called a vote!\n**{}**\nVoting enabled for 30 seconds!'.format(ctx.message.author.name, question))
         bb.started()
         await asyncio.sleep(30)
-        await bot.edit_message(msg, '{} has called a vote!\n**{}**\nVoting has ended!!'.format(ctx.message.author.name, question))
+        await bot.edit_message(msg, '{} has called a vote!\n**{}**\nVoting has ended!!'.format(ctx.message.author.name,
+                                                                                               question))
         bb.stopped()
         yay, nay = bb.results()
         if yay > nay:
@@ -201,7 +204,7 @@ async def no(ctx):
 async def killwatch():
     await bot.wait_until_ready()
 
-    #channel = discord.utils.get(bot.get_all_channels(), name='alliance')
+    # channel = discord.utils.get(bot.get_all_channels(), name='alliance')
     channels = []
     for chan in bot.get_all_channels():
         if chan.name == 'alliance':
@@ -211,8 +214,8 @@ async def killwatch():
         return
     logging.info('killwatch alive on the following servers:')
     logging.info(bot.servers)
-    #for channel in channels:
-        #await bot.send_message(channel, "**KILL ALERT** is running! {:,}ISK Alliance Threshhold:{:,} Big isk Threshold <BETA>".format(VALUE, BIGVALUE))
+    # for channel in channels:
+    # await bot.send_message(channel, "**KILL ALERT** is running! {:,}ISK Alliance Threshhold:{:,} Big isk Threshold <BETA>".format(VALUE, BIGVALUE))
 
     while not bot.is_closed:
         try:
@@ -234,7 +237,7 @@ async def killwatch():
                     if stream['package']['zkb']['totalValue'] >= VALUE:
                         for channel in channels:
                             await bot.send_message(channel, "**VICTIM ALERT**\nhttps://zkillboard.com/kill/{}/".format(
-                                                        stream['package']['killID']))
+                                stream['package']['killID']))
                         continue
             for attacker in stream['package']['killmail']['attackers']:
                 if 'alliance' in attacker:
@@ -242,12 +245,12 @@ async def killwatch():
                         if stream['package']['zkb']['totalValue'] >= VALUE:
                             for channel in channels:
                                 await bot.send_message(channel, "**KILL ALERT**\nhttps://zkillboard.com/kill/{}/".
-                                                            format(stream['package']['killID']))
+                                                       format(stream['package']['killID']))
                             break
             if stream['package']['zkb']['totalValue'] >= BIGVALUE:
                 for channel in channels:
                     await bot.send_message(channel, "**BIG KILL ALERT**\nhttps://zkillboard.com/kill/{}/".
-                                       format(stream['package']['killID']))
+                                           format(stream['package']['killID']))
 
 
 async def trivia():
@@ -255,14 +258,17 @@ async def trivia():
         '''
         Simple, no nonsense, make things unpretty html stripper for descriptions
         '''
+
         def __init__(self):
             super().__init__()
             self.reset()
             self.strict = False
-            self.convert_charrefs= True
+            self.convert_charrefs = True
             self.fed = []
+
         def handle_data(self, d):
             self.fed.append(d)
+
         def get_data(self):
             return ''.join(self.fed)
 
@@ -292,7 +298,9 @@ async def trivia():
                 bot.send_message(channel, 'Invalid Question fetched, trying again')
                 break
             answer = strip_tags(stream[0]['answer'])
-            msg = await bot.send_message(channel, 'Category: {}  Value: ${}\nQuestion: {}\n30 seconds on the clock!'.format(stream[0]['category']['title'], stream[0]['value'], stream[0]['question']))
+            msg = await bot.send_message(channel,
+                                         'Category: {}  Value: ${}\nQuestion: {}\n30 seconds on the clock!'.format(
+                                             stream[0]['category']['title'], stream[0]['value'], stream[0]['question']))
             while True:
                 guess = await bot.wait_for_message(timeout=1)
 
@@ -301,7 +309,9 @@ async def trivia():
                     break
                 if guess:
                     if fuzz.ratio(guess.content.lower(), answer.lower()) >= 80:
-                        await bot.send_message(channel, 'Ding! {} guessed the correct answer: {}'.format(guess.author.name, answer))
+                        await bot.send_message(channel,
+                                               'Ding! {} guessed the correct answer: {}'.format(guess.author.name,
+                                                                                                answer))
                         with shelve.open('triviastats') as stats:
                             if guess.author.name in stats:
                                 stats[guess.author.name] += 1
@@ -387,7 +397,7 @@ while True:
 while not bot.is_closed:
     try:
         logging.info('starting our tasks')
-        #loop.create_task(trivia())
+        # loop.create_task(trivia())
         loop.create_task(killwatch())
         loop.run_until_complete(bot.connect())
 
@@ -398,5 +408,3 @@ while not bot.is_closed:
             websockets.InvalidHandshake, websockets.WebSocketProtocolError):
         logging.exception("Discord.py pls")
         loop.run_until_complete(sleep(10))
-
-
