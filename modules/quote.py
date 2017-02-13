@@ -27,6 +27,22 @@ def get_quote(key):
         return "No quote for that key found :("
 
 
+def get_key_list():
+    resp = "Existing keys: \n"
+    for key, _ in CACHE:
+        resp += key + ", "
+
+    return resp
+
+
+def delete_quote(key):
+    if key in CACHE:
+        del CACHE[key]
+        return "Killed any witnesses of the deletion of {}".format(key)
+    else:
+        return "Something's not quite right."
+
+
 def store_quote(key, value):
     CACHE[key] = value
     write_archives()
