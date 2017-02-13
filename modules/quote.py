@@ -28,21 +28,23 @@ def get_quote(key):
 
 
 def get_key_list():
-    try:
-        if not CACHE:
-            load_archives()
+    if not CACHE:
+        load_archives()
+    if CACHE:
         resp = "Existing keys: \n"
         for key, _ in CACHE.items():
             resp += key + ", "
-    except FileExistsError:
-        return 'Quote database is busted or missing - ripperino'
-
-    return resp
+        return resp
+    else:
+        return "No Keys found."
 
 
 def delete_quote(key):
+    if not CACHE:
+        load_archives()
     if key in CACHE:
         del CACHE[key]
+        write_archives()
         return "Killed any witnesses of the deletion of {}".format(key)
     else:
         return "Something's not quite right."
