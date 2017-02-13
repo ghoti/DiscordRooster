@@ -62,7 +62,6 @@ def get_total_contracts(contracts):
     inprogress = 0
 
     for contract in contracts:
-        print(contracts[contract])
         now = arrow.utcnow().replace(months=-1)
         if contracts[contract]['type'] == 'Courier':
             if now < arrow.get(contracts[contract]['issued']):
