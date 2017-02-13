@@ -28,9 +28,14 @@ def get_quote(key):
 
 
 def get_key_list():
-    resp = "Existing keys: \n"
-    for key, _ in CACHE.items():
-        resp += key + ", "
+    try:
+        if not CACHE:
+            load_archives()
+        resp = "Existing keys: \n"
+        for key, _ in CACHE.items():
+            resp += key + ", "
+    except FileExistsError:
+        return 'Quote database is busted or missing - ripperino'
 
     return resp
 
