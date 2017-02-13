@@ -137,12 +137,13 @@ async def fweight(ctx, *toon: str):
     await bot.say(status)
 
 
-@bot.command(description="Get Platinum insurance rate for a ship")
-async def insure(*ship: str):
+@bot.command(pass_context=True, description="Get Platinum insurance rate for a ship")
+async def insure(ctx, *ship: str):
     '''
     Insurance rate (platinum) for a given ship
     CASE SENSITIVE
     '''
+    await bot.send_typing(destination=ctx.message.channel)
     logging.info("Caught !insure with paramaters: {}".format(ship))
     ship = ' '.join(ship)
     insurance = modules.insurance.insure(ship)
