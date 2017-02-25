@@ -8,5 +8,8 @@ Also requires:
 *arrow
 *requests
 *discord.py
+*fuzzywuzzy
+*pyowm
 
 To run: copy credentials.py.dst to credentials.py in the config folder, edit appropriately, and enjoy
+
