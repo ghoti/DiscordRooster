@@ -1,3 +1,4 @@
+#! /usr/bin/env python3
 import aiohttp
 import arrow
 import asyncio
@@ -21,6 +22,7 @@ import modules.weather
 import modules.who
 import modules.insurance
 import modules.quote
+import modules.buyback
 from modules import quote
 
 ALLIANCE = 1900696668
@@ -134,6 +136,11 @@ async def fweight(ctx, *toon: str):
     status = modules.fweight.fweight(toon)
     await bot.say(status)
 
+@bot.command(pass_context=True, description="Get number of outstanding buyback contracts")
+async def buyback(ctx):
+    await bot.send_typing(destination=ctx.message.channel)
+    status = modules.buyback.buyback()
+    await bot.say(status)
 
 @bot.command(pass_context=True, description="Get Platinum insurance rate for a ship")
 async def insure(ctx, *ship: str):
