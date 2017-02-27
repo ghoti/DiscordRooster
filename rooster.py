@@ -23,6 +23,7 @@ import modules.who
 import modules.insurance
 import modules.quote
 import modules.buyback
+import modules.ly
 from modules import quote
 
 ALLIANCE = 1900696668
@@ -140,6 +141,12 @@ async def fweight(ctx, *toon: str):
 async def buyback(ctx):
     await bot.send_typing(destination=ctx.message.channel)
     status = modules.buyback.buyback()
+    await bot.say(status)
+
+@bot.command(description="Gets distance and required JDC level information for jumping between two systems")
+async def ly(*systems: str):
+    systems = ' '.join(systems)
+    status = modules.ly.ly(systems)
     await bot.say(status)
 
 @bot.command(pass_context=True, description="Get Platinum insurance rate for a ship")
