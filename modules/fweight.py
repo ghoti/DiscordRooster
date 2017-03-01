@@ -16,19 +16,19 @@ def fweight(name):
 
         contracts, timer = get_contracts()
     
-        outstanding, completed, inprogress = get_user_contracts(id.result, contracts)
+        outstanding, completed, inprogress, volume = get_user_contracts(id.result, contracts)
 
-        return '```Fweight Status for {} for the last 30 days\nOutstanding: {}\nInProgress: {}\nCompleted: {}\nNew data {}```'.format(
-                name, outstanding, inprogress, completed, arrow.get(timer).humanize())
+        return '```Fweight Status for {} for the last 30 days\nOutstanding: {}\nInProgress: {}\nCompleted: {}\nOutstanding Volume: {}\nNew data {}```'.format(
+                name, outstanding, inprogress, completed, volume, arrow.get(timer).humanize())
 
     else:
         # Get Fweight totals if no name supplied
         contracts, timer = get_contracts()
 
-        outstanding, completed, inprogress = get_total_contracts(contracts)
+        outstanding, completed, inprogress, volume = get_total_contracts(contracts)
 
-        return '```Fweight Totals (no name given) for the last 30 days\nOutstanding: {}\nInProgress: {}\nCompleted: {}\nNew data {}```'.\
-                format(outstanding, inprogress, completed, arrow.get(timer).humanize())
+        return '```Fweight Totals (no name given) for the last 30 days\nOutstanding: {}\nInProgress: {}\nCompleted: {}\nOutstanding Volume: {}\nNew data {}```'.\
+                format(outstanding, inprogress, completed, volume, arrow.get(timer).humanize())
 
 
 def get_contracts():
@@ -42,6 +42,7 @@ def get_user_contracts(id, contracts):
     outstanding = 0
     completed = 0
     inprogress = 0
+    volume = 0
 
     now = arrow.utcnow().replace(months=-1)
     for contract in contracts:
@@ -50,16 +51,18 @@ def get_user_contracts(id, contracts):
                 completed += 1
             elif contracts[contract]['status'] == 'Outstanding':
                 outstanding += 1
+                volume += contracts[contract]['volume']
             elif contracts[contract]['status'] == 'InProgress':
                 inprogress += 1
 
-    return outstanding, completed, inprogress
+    return outstanding, completed, inprogress, volume
 
 
 def get_total_contracts(contracts):
     outstanding = 0
     completed = 0
     inprogress = 0
+    volume = 0
 
     for contract in contracts:
         now = arrow.utcnow().replace(months=-1)
@@ -69,10 +72,11 @@ def get_total_contracts(contracts):
                     completed += 1
                 elif contracts[contract]['status'] == 'Outstanding':
                     outstanding += 1
+                    volume += contracts[contract]['volume']
                 elif contracts[contract]['status'] == 'InProgress':
                     inprogress += 1
 
-    return outstanding, completed, inprogress
+    return outstanding, completed, inprogress, volume
 
 if __name__ == "__main__":
     print(fweight('chainsaw mcginny'))
