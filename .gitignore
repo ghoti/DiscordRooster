@@ -3,3 +3,5 @@ data/*
 config/credentials.py
 *.py[co]
 *.egg-info
+*.swp
+*.sqlite

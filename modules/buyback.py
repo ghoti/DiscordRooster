@@ -22,6 +22,7 @@ def parse_contracts(contracts):
     for contract in contracts:
         if contracts[contract]['type'] == 'ItemExchange':
             if contracts[contract]['status'] == 'Outstanding':
+                #ignores contracts issued by NOMSS 
                 if contracts[contract]['issuer'] != 95548667:
                     outstanding += 1
                     value += contracts[contract]['price']
