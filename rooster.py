@@ -48,14 +48,14 @@ async def topic(ctx, *motd: str):
 
 
 @bot.command(pass_context=True, description='Mute a given user')
-@commands.has_any_role("Director", "Leadership")
+@commands.has_any_role("Director", "Leadership", "RetiredLeadership")
 async def mute(ctx, user: discord.Member):
     server = ctx.message.server
     await bot.add_roles(user, discord.utils.get(server.roles, name="Time-OUT"))
 
 
 @bot.command(pass_context=True, description='Unmute a given user')
-@commands.has_any_role("Director", "Leadership")
+@commands.has_any_role("Director", "Leadership", "RetiredLeadership")
 async def unmute(ctx, user: discord.Member):
     server = ctx.message.server
     await bot.remove_roles(user, discord.utils.get(server.roles, name='Time-OUT'))
@@ -218,7 +218,7 @@ async def no(ctx):
         await bot.say("There is currently no vote in progress")
 
 @bot.command(pass_context=True, description="Mute Roosters Kill announcer")
-@commands.has_any_role('Director')
+@commands.has_any_role('Director', 'RetiredLeadership')
 async def mutekills():
     global killwatchmute
     if killwatchmute:
