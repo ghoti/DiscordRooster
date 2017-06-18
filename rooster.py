@@ -389,7 +389,7 @@ async def on_ready():
     logging.info(bot.user.name)
     logging.debug(bot.user.id)
     logging.debug('------')
-    await bot.change_status(game=discord.Game(name="a game of Chicken"))
+    await bot.change_presence(game=discord.Game(name="a game of Chicken"))
 
 
 bb = modules.ballotbox.Ballot_Box()
