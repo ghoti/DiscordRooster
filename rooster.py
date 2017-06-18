@@ -234,10 +234,9 @@ async def killwatch():
     global killwatchmute
     killwatchmute = False
 
-    # channel = discord.utils.get(bot.get_all_channels(), name='alliance')
     channels = []
     for chan in bot.get_all_channels():
-        if chan.name == 'alliance':
+        if chan.name == 'fweddit':
             channels.append(chan)
     if not channels:
         logging.warning('no channels for kill announcing, killwatch not running')
