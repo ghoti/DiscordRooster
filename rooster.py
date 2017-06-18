@@ -25,6 +25,7 @@ import modules.quote
 import modules.buyback
 import modules.ly
 from modules import quote
+import kill
 
 ALLIANCE = 1900696668
 # ALLIANCE = 99002172
@@ -216,9 +217,22 @@ async def no(ctx):
     else:
         await bot.say("There is currently no vote in progress")
 
+@bot.command(pass_context=True, description="Mute Roosters Kill announcer")
+@commands.has_any_role('Director')
+async def mutekills():
+    global killwatchmute
+    if killwatchmute:
+        killwatchmute = False
+        await bot.say("Killwatching resumed.")
+    else:
+        killwatchmute = True
+        await bot.say("Killwatching suppressed.")
+
 
 async def killwatch():
     await bot.wait_until_ready()
+    global killwatchmute
+    killwatchmute = False
 
     # channel = discord.utils.get(bot.get_all_channels(), name='alliance')
     channels = []
@@ -242,31 +256,27 @@ async def killwatch():
             logging.warning('Killwatch server gave up on us')
             await asyncio.sleep(10)
             stream['package'] = None
-        if stream['package']:
-            # Check the KM isn't old yet
-            kill_time = arrow.get(stream['package']['killmail']['killTime'], 'YYYY.MM.DD HH:mm:ss')
-            if kill_time < arrow.utcnow().shift(days=-2):
+        if stream['package'] and not killwatchmute:
+            currentkill = kill.Kill(stream)
+            if currentkill.isOldKill():
                 continue
-
-            if 'alliance' in stream['package']['killmail']['victim']:
-                if stream['package']['killmail']['victim']['alliance']['id'] == ALLIANCE:
-                    if stream['package']['zkb']['totalValue'] >= VALUE:
-                        for channel in channels:
-                            await bot.send_message(channel, "**VICTIM ALERT**\nhttps://zkillboard.com/kill/{}/".format(
-                                stream['package']['killID']))
-                        continue
-            for attacker in stream['package']['killmail']['attackers']:
-                if 'alliance' in attacker:
-                    if attacker['alliance']['id'] == ALLIANCE:
-                        if stream['package']['zkb']['totalValue'] >= VALUE:
-                            for channel in channels:
-                                await bot.send_message(channel, "**KILL ALERT**\nhttps://zkillboard.com/kill/{}/".
-                                                       format(stream['package']['killID']))
-                            break
-            if stream['package']['zkb']['totalValue'] >= BIGVALUE:
+            if currentkill.victimAlliance() and currentkill.isValuable():
                 for channel in channels:
-                    await bot.send_message(channel, "**BIG KILL ALERT**\nhttps://zkillboard.com/kill/{}/".
-                                           format(stream['package']['killID']))
+                    await bot.send_message(channel, "**VICTIM ALERT**\nhttps://zkillboard.com/kill/{}/".format(
+                        currentkill.killid))
+                continue
+            if currentkill.attackerAlliance() and currentkill.isValuable():
+                for channel in channels:
+                    await bot.send_message(channel, "**KILL ALERT**\nhttps://zkillboard.com/kill/{}/".format(
+                        currentkill.killid))
+                continue
+            if currentkill.isBigKill():
+                for channel in channels:
+                    await bot.send_message(channel, "**BIG KILL ALERT\nhttps://zkillboard.com/kill/{}/".format(
+                        currentkill.killid))
+                continue
+        #just in case we hit a rate limit while parsing a fight or something silly
+        await asyncio.sleep(2)
 
 
 async def trivia():
