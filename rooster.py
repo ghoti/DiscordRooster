@@ -271,7 +271,7 @@ async def killwatch():
                 continue
             if currentkill.isBigKill():
                 for channel in channels:
-                    await bot.send_message(channel, "**BIG KILL ALERT\nhttps://zkillboard.com/kill/{}/".format(
+                    await bot.send_message(channel, "**BIG KILL ALERT**\nhttps://zkillboard.com/kill/{}/".format(
                         currentkill.killid))
                 continue
         #just in case we hit a rate limit while parsing a fight or something silly
