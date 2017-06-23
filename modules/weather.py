@@ -13,11 +13,14 @@ def weather(city=None):
 
     try:
         conditions = owm.weather_at_place(city)
+        if conditions:
+            return 'Current Conditions of {}: {}F/{}C at {}% Humidity and {}'.format(
+                conditions.get_location().get_name(), conditions.get_weather().get_temperature('fahrenheit')['temp'],
+                conditions.get_weather().get_temperature('celsius')['temp'],
+                conditions.get_weather().get_humidity(), conditions.get_weather().get_detailed_status())
     except NotFoundError:
         return 'City Not found, try again'
-    if conditions:
-        return 'Current Conditions of {}: {}F/{}C at {}% Humidity and {}'.format(conditions.get_location().get_name(), conditions.get_weather().get_temperature('fahrenheit')['temp'],
-                                                                 conditions.get_weather().get_temperature('celsius')['temp'], conditions.get_weather().get_humidity(),conditions.get_weather().get_detailed_status())
+
 
 if __name__ == '__main__':
     print(weather('hubert nc'))
