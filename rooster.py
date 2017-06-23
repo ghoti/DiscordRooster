@@ -1,6 +1,7 @@
 #! /usr/bin/env python3
 import asyncio
 import logging
+import operator
 import re
 import shelve
 from datetime import timedelta
@@ -277,8 +278,11 @@ async def killwatch():
         #just in case we hit a rate limit while parsing a fight or something silly
         await asyncio.sleep(2)
 
-
-async def trivia():
+@bot.command(pass_context=True, description="Start a round of Trivia!")
+async def trivia(ctx):
+    if ctx.message.channel.name != "trivia":
+        await bot.say("Trivia not allowed here, try again in the #trivia channel!")
+        return
     class MLStripper(HTMLParser):
         '''
         Simple, no nonsense, make things unpretty html stripper for descriptions
@@ -302,48 +306,50 @@ async def trivia():
         s.feed(html)
         return s.get_data()
 
-    await bot.wait_until_ready()
-    channel = discord.utils.get(bot.get_all_channels(), name='trivia')
-    if not channel:
-        logging.warning('That Channel isnt on the server, triviabot not running')
-        return
-    stats = shelve.open('triviastats')
+    #stats = shelve.open('triviastats')
+    streak = 0
 
-    while True:
+    while streak < 5:
         try:
             with aiohttp.ClientSession() as session:
                 async with session.get('http://jservice.io/api/random') as resp:
                     stream = await resp.json()
         except:
-            await bot.send_message(channel, "Trivia is currently down, try again, or try later!")
-            asyncio.sleep(300)
+            await bot.say("Trivia is currently down. Try again in a bit.")
+            return
         timer = arrow.utcnow().replace(seconds=30)
         if stream and stream[0]['question']:
             if stream[0]['invalid_count']:
-                bot.send_message(channel, 'Invalid Question fetched, trying again')
+                bot.say('Invalid Question fetched, trying again')
                 break
             answer = strip_tags(stream[0]['answer'])
-            msg = await bot.send_message(channel,
-                                         'Category: {}  Value: ${}\nQuestion: {}\n30 seconds on the clock!'.format(
+            msg = await bot.say('Category: {}  Value: ${}\nQuestion: {}\n30 seconds on the clock!'.format(
                                              stream[0]['category']['title'], stream[0]['value'], stream[0]['question']))
             while True:
                 guess = await bot.wait_for_message(timeout=1)
 
                 if timer < arrow.utcnow():
-                    await bot.send_message(channel, "No one guessed the correct answer: {}".format(answer))
+                    await bot.say("No one guessed the correct answer: {}".format(answer))
+                    streak = streak + 1
                     break
                 if guess:
                     if fuzz.ratio(guess.content.lower(), answer.lower()) >= 80:
-                        await bot.send_message(channel,
-                                               'Ding! {} guessed the correct answer: {}'.format(guess.author.name,
-                                                                                                answer))
+                        await bot.say('Ding! {} guessed the correct answer: {}'.format(guess.author.name, answer))
                         with shelve.open('triviastats') as stats:
                             if guess.author.name in stats:
                                 stats[guess.author.name] += 1
                             else:
                                 stats[guess.author.name] = 1
+                        streak = streak + 1
                         break
-        await asyncio.sleep(5)
+
+            asyncio.sleep(1)
+
+    await bot.say("Top 5 after this round:")
+    with shelve.open('triviastats') as stats:
+        for x in sorted(stats.items(), key=operator.itemgetter(1))[:5]:
+            await bot.say('`{} : {} Correct`'.format(x[0], x[1]))
+        await bot.say('!trivia for a new round!')
 
 
 @bot.command(description="Grabs or stores a quote from discord.")
@@ -422,7 +428,6 @@ while True:
 while not bot.is_closed:
     try:
         logging.info('starting our tasks')
-        # loop.create_task(trivia())
         loop.create_task(killwatch())
         loop.run_until_complete(bot.connect())
 

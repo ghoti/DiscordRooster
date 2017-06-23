@@ -1,6 +1,5 @@
 import aiohttp
 import asyncio
-from pprint import pprint
 import pyowm
 from pyowm.exceptions.not_found_error import NotFoundError
 from config.credentials import WEATHER_API

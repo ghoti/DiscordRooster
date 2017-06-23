@@ -22,4 +22,9 @@ class Trivia():
         else:
             return 0
 
+if __name__ == '__main__':
+    t = Trivia()
+    for x in t.stats.items():
+        print(x)
+
 
