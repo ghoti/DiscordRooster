@@ -345,12 +345,12 @@ async def trivia(ctx):
 
             asyncio.sleep(1)
 
-    await bot.say("Top 5 after this round:")
-    await asyncio.sleep(1)
     with shelve.open('triviastats') as stats:
+        statstring = '```Top 5 after this round:\n'
         for x in sorted(stats.items(), key=operator.itemgetter(1), reverse=True)[:5]:
-            await bot.say('`{} : {} Correct`'.format(x[0], x[1]))
-        await asyncio.sleep(2)
+            statstring = statstring+'{} : {} Correct\n'.format(x[0], x[1])
+        await bot.say(statstring+'```')
+        await asyncio.sleep(1)
         await bot.say('!trivia for a new round!')
 
 
