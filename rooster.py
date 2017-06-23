@@ -1,31 +1,31 @@
 #! /usr/bin/env python3
-import aiohttp
-import arrow
 import asyncio
 import logging
-from html.parser import HTMLParser
-from datetime import timedelta
-import discord
-from discord.ext import commands
-from time import sleep
 import re
-import requests
 import shelve
+from datetime import timedelta
+from html.parser import HTMLParser
+from time import sleep
+
+import aiohttp
+import arrow
+import discord
+import requests
 import websockets
+from discord.ext import commands
 from fuzzywuzzy import fuzz
 
-from config.credentials import LOGIN_TOKEN
 import modules.ballotbox
+import modules.buyback
 import modules.fweight
+import modules.insurance
+import modules.ly
+import modules.quote
 import modules.time
 import modules.weather
 import modules.who
-import modules.insurance
-import modules.quote
-import modules.buyback
-import modules.ly
-from modules import quote
-import kill
+from config.credentials import LOGIN_TOKEN
+from modules import quote, kill
 
 ALLIANCE = 1900696668
 # ALLIANCE = 99002172
