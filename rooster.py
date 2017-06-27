@@ -356,7 +356,7 @@ async def trivia(ctx):
                 if len(bar) % 5 == 0:
                     visual = await bot.edit_message(visual, bar)
 
-            await asyncio.sleep(1)
+            await asyncio.sleep(2)
 
     with shelve.open('triviastats') as stats:
         statstring = '```Top 5 after this round:\n'
@@ -367,6 +367,18 @@ async def trivia(ctx):
         await bot.say('!trivia for a new round!')
         gameactive = False
 
+@bot.command(pass_context=True, description='Give trivia stats for user')
+async def stats(ctx):
+    '''
+    Give a user their trivia stats
+    '''
+    with shelve.open('triviastats') as stats:
+        if ctx.message.author.name in stats:
+            await bot.say("{} has correctly answered {} Trivia Question in #trivia".format(
+                ctx.message.author.name, stats[ctx.message.author.name]
+            ))
+        else:
+            await bot.say("{} Has not answered any Trivia Questions in #trivia".format(ctx.message.author.name))
 
 @bot.command(description="Grabs or stores a quote from discord.")
 async def q(*quote_key: str):
