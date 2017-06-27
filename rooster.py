@@ -343,6 +343,7 @@ async def trivia(ctx):
                     break
                 if guess:
                     if fuzz.ratio(guess.content.lower(), answer.lower()) >= 80:
+                        await bot.delete_message(visual)
                         await bot.say('Ding! {} guessed the correct answer: {}'.format(guess.author.name, answer))
                         with shelve.open('triviastats') as stats:
                             if guess.author.name in stats:
