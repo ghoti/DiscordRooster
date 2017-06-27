@@ -326,15 +326,18 @@ async def trivia(ctx):
         timer = arrow.utcnow().replace(seconds=30)
         if stream and stream[0]['question']:
             if stream[0]['invalid_count']:
-                bot.say('Invalid Question fetched, trying again')
+                await bot.say('Invalid Question fetched, aborting round.')
                 break
             answer = strip_tags(stream[0]['answer'])
-            msg = await bot.say('Category: {}  Value: ${}\nQuestion: {}\n30 seconds on the clock!'.format(
+            msg = await bot.say('Category: {}  Value: ${}\nQuestion: {}'.format(
                                              stream[0]['category']['title'], stream[0]['value'], stream[0]['question']))
+            bar = '=============================='
+            visual = await bot.say(bar)
             while True:
                 guess = await bot.wait_for_message(timeout=1)
 
                 if timer < arrow.utcnow():
+                    await bot.delete_message(visual)
                     await bot.say("No one guessed the correct answer: {}".format(answer))
                     streak = streak + 1
                     break
@@ -348,8 +351,11 @@ async def trivia(ctx):
                                 stats[guess.author.name] = 1
                         streak = streak + 1
                         break
+                bar = bar[:-1]
+                if len(bar) % 5 == 0:
+                    visual = await bot.edit_message(visual, bar)
 
-            asyncio.sleep(1)
+            await asyncio.sleep(1)
 
     with shelve.open('triviastats') as stats:
         statstring = '```Top 5 after this round:\n'
