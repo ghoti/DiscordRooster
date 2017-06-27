@@ -33,6 +33,8 @@ ALLIANCE = 1900696668
 # ALLIANCE = 1354830081
 VALUE = 500000000
 BIGVALUE = 20000000000
+global gameactive
+gameactive = False
 
 FIT_PARSE = re.compile('\[.+?, .+]')
 OSMIUM_URL = 'https://o.smium.org/api/json/loadout/eft/attributes/loc:ship,a:tank,a:ehpAndResonances,a:capacitors,a:damage,a:priceEstimateTotal?input={}'
@@ -280,6 +282,9 @@ async def killwatch():
 
 @bot.command(pass_context=True, description="Start a round of Trivia!")
 async def trivia(ctx):
+    global gameactive
+    if gameactive:
+        return
     if ctx.message.channel.name != "trivia":
         await bot.say("Trivia not allowed here, try again in the #trivia channel!")
         return
@@ -308,6 +313,7 @@ async def trivia(ctx):
 
     #stats = shelve.open('triviastats')
     streak = 0
+    gameactive = True
 
     while streak < 5:
         try:
@@ -352,6 +358,7 @@ async def trivia(ctx):
         await bot.say(statstring+'```')
         await asyncio.sleep(1)
         await bot.say('!trivia for a new round!')
+        gameactive = False
 
 
 @bot.command(description="Grabs or stores a quote from discord.")
