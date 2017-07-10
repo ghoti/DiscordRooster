@@ -25,7 +25,7 @@ import modules.time
 import modules.weather
 import modules.who
 from config.credentials import LOGIN_TOKEN
-from modules import quote, kill
+from modules import kill
 
 ALLIANCE = 1900696668
 # ALLIANCE = 99002172
