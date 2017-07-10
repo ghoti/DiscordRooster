@@ -39,7 +39,12 @@ FIT_PARSE = re.compile('\[.+?, .+]')
 OSMIUM_URL = 'https://o.smium.org/api/json/loadout/eft/attributes/loc:ship,a:tank,a:ehpAndResonances,a:capacitors,a:damage,a:priceEstimateTotal?input={}'
 
 bot = commands.Bot(command_prefix='!', description='Rooster knows all...')
-
+@bot.check
+def can_speak(ctx):
+    for i in ctx.message.author.roles:
+        if i.name == 'Time-OUT':
+            return False
+    return True
 
 @bot.command(pass_context=True, description="Change the MOTD of a channel")
 @commands.has_any_role("Director", "Leadership")
@@ -95,7 +100,7 @@ async def on_message(message):
             pass
 
 
-@bot.command(description="Get's the current weather as a city, or in CCP's office if none provided")
+@bot.command(description="Get's the current weather as a city, or in CCP's office if none provided", )
 async def weather(*city: str):
     '''
     Get the weather in a specified city, or nearest weather station
