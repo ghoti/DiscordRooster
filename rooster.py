@@ -21,7 +21,6 @@ import modules.buyback
 import modules.fweight
 import modules.insurance
 import modules.ly
-import modules.quote
 import modules.time
 import modules.weather
 import modules.who
