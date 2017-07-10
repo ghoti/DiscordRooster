@@ -180,6 +180,7 @@ async def vote(ctx, *question: str):
         return
     else:
         question = ' '.join(question).strip()
+        question = question.replace('@', '')
         msg = await bot.say(
             '{} has called a vote!\n**{}**\nVoting enabled for 30 seconds!'.format(ctx.message.author.name, question))
         bb.started()
