@@ -380,51 +380,6 @@ async def stats(ctx):
         else:
             await bot.say("{} Has not answered any Trivia Questions in #trivia".format(ctx.message.author.name))
 
-@bot.command(description="Grabs or stores a quote from discord.")
-async def q(*quote_key: str):
-    await bot.wait_until_ready()
-    try:
-        key = quote_key[0]
-    except IndexError:
-        await bot.say("You will have to give me a key to be funny.")
-        return
-
-    logging.info("posted a quote, key {}".format(key))
-    resp = quote.get_quote(key)
-    await bot.say(resp)
-
-
-@bot.command(description="Remembers a quote")
-async def remember(*input: str):
-    await bot.wait_until_ready()
-    try:
-        key = input[0]
-        value = ' '.join(input[1:])
-    except IndexError:
-        await bot.say("Not enough to make a quote.")
-        return
-
-    logging.info("Storing quote, key: '{}', value: '{}'".format(key, value))
-    quote.store_quote(key, value)
-    await bot.say("Got it.")
-
-
-@bot.command(description="Forgets a key in the quote list.")
-async def forget(*input: str):
-    await bot.wait_until_ready()
-    try:
-        key = input[0]
-        quote.delete_quote(key)
-        await bot.say("k.")
-    except IndexError:
-        await bot.say("I will not have blanket amnesia, thank you.")
-
-
-@bot.command(description="Lists all possible quote keys, but not the values.")
-async def quotes():
-    await bot.wait_until_ready()
-    await bot.say(quote.get_key_list())
-
 
 @bot.event
 async def on_ready():
