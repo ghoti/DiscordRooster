@@ -11,6 +11,7 @@ from time import sleep
 import aiohttp
 import arrow
 import discord
+from esipy import EsiClient, App
 import requests
 import websockets
 from discord.ext import commands
@@ -24,6 +25,7 @@ import modules.ly
 import modules.time
 import modules.weather
 import modules.who
+import modules.esiwho
 from config.credentials import LOGIN_TOKEN
 from modules import kill
 
@@ -37,6 +39,8 @@ gameactive = False
 
 FIT_PARSE = re.compile('\[.+?, .+]')
 OSMIUM_URL = 'https://o.smium.org/api/json/loadout/eft/attributes/loc:ship,a:tank,a:ehpAndResonances,a:capacitors,a:damage,a:priceEstimateTotal?input={}'
+esi_app = App.create('https://esi.tech.ccp.is/latest/swagger.json?datasource=tranquility')
+esi_client = EsiClient()
 
 bot = commands.Bot(command_prefix='!', description='Rooster knows all...')
 @bot.check
@@ -122,16 +126,26 @@ async def time():
     await bot.say(modules.time.time())
 
 
-@bot.command(pass_context=True, description="info about a player.  name, age, sec status, stats, corp info, and last kb activity")
+#@bot.command(pass_context=True, description="info about a player.  name, age, sec status, stats, corp info, and last kb activity")
+#async def who(ctx, *toon: str):
+#    '''
+#    Basic Public info about a given EVE Character
+#    '''
+#    await bot.send_typing(destination=ctx.message.channel)
+#    logging.info('Caught !who with paramaters: {}'.format(toon))
+#    toon = ' '.join(toon)
+#    info = modules.who.who(toon)
+#    await bot.say(info)
+
+@bot.command(pass_context=True, description='Info about a character or corp if found')
 async def who(ctx, *toon: str):
-    '''
-    Basic Public info about a given EVE Character
-    '''
     await bot.send_typing(destination=ctx.message.channel)
-    logging.info('Caught !who with paramaters: {}'.format(toon))
     toon = ' '.join(toon)
-    info = modules.who.who(toon)
-    await bot.say(info)
+    embed = modules.esiwho.who(esi_app, esi_client, toon)
+    if type(embed) is discord.Embed:
+        await bot.send_message(ctx.message.channel, embed=embed)
+    else:
+        await bot.say(embed)
 
 
 @bot.command(pass_context=True, description="Get a user's contract status(es) from fweight (or totals if none given")
@@ -157,6 +171,7 @@ async def ly(*systems: str):
     status = modules.ly.ly(systems)
     await bot.say(status)
 
+
 @bot.command(pass_context=True, description="Get Platinum insurance rate for a ship")
 async def insure(ctx, *ship: str):
     '''
@@ -167,7 +182,6 @@ async def insure(ctx, *ship: str):
     ship = ' '.join(ship)
     insurance = modules.insurance.insure(ship)
     await bot.say(insurance)
-
 
 @bot.command(pass_context=True, description="Call a vote for 30 seconds")
 async def vote(ctx, *question: str):
