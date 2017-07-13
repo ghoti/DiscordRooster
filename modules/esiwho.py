@@ -30,7 +30,7 @@ def who(esi_app, esi_client, toon=None):
         embed.color = Color.dark_orange()
         embed.set_author(name=name)
         embed.set_thumbnail(url='https://image.eveonline.com/Character/{}_256.jpg'.format(charid))
-        embed.url = 'https://https://zkillboard.com/character/{}/'.format(name.replace(' ', '+'))
+        embed.url = 'https://zkillboard.com/character/{}/'.format(charid)
         if allianceid:
             embed.description = 'Born {}\nJoined {} ({}) {}\n{} Sec Status with {}\nLast active in game: {}'.format(
                 age, corpname, alliancename, timeincorp, sec_status, activitystring, last_active)
@@ -52,7 +52,7 @@ def who(esi_app, esi_client, toon=None):
         embed.color = Color.dark_gold()
         embed.set_author(name=name + ' [' + ticker + ']')
         embed.set_thumbnail(url='https://image.eveonline.com/Corporation/{}_128.png'.format(corpid))
-        embed.url = 'https://evewho.com/corp/{}'.format(name.replace(' ', '+'))
+        embed.url = 'https://zkillboard.com/corporation/{}/'.format(corpid)
         if allianceid:
             embed.description = 'Founded {}\nMember of {}\nCurrent Members: {}\n{}\nLast active in game: {}'.format(
                 age, alliancename, members, activitystring, last_active)
