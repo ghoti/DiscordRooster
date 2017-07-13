@@ -11,21 +11,21 @@ from time import sleep
 import aiohttp
 import arrow
 import discord
-from esipy import EsiClient, App
 import requests
 import websockets
 from discord.ext import commands
+from esipy import EsiClient, App
 from fuzzywuzzy import fuzz
 
 import modules.ballotbox
 import modules.buyback
+import modules.esiwho
 import modules.fweight
 import modules.insurance
 import modules.ly
 import modules.time
 import modules.weather
 import modules.who
-import modules.esiwho
 from config.credentials import LOGIN_TOKEN
 from modules import kill
 

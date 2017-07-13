@@ -30,7 +30,7 @@ def who(esi_app, esi_client, toon=None):
         embed.color = Color.dark_orange()
         embed.set_author(name=name)
         embed.set_thumbnail(url='https://image.eveonline.com/Character/{}_256.jpg'.format(charid))
-        embed.url = 'https://evewho.com/pilot/{}'.format(name.replace(' ', '+'))
+        embed.url = 'https://https://zkillboard.com/character/{}/'.format(name.replace(' ', '+'))
         if allianceid:
             embed.description = 'Born {}\nJoined {} ({}) {}\n{} Sec Status with {}\nLast active in game: {}'.format(
                 age, corpname, alliancename, timeincorp, sec_status, activitystring, last_active)
@@ -86,9 +86,8 @@ def character_sheet(esi_app, esi_client, charid):
 def time_in_corp(esi_app, esi_client, charid, corpid):
     charhistory = esi_app.op['get_characters_character_id_corporationhistory'](character_id=str(charid))
     timeincorp = esi_client.request(charhistory)
-    for corp in timeincorp.data:
-        if corp['corporation_id'] == corpid:
-            currentlength = pendulum.parse(corp['start_date'].to_json())
+    #first result _should_ be our current corp, assuming so until proven otherwise
+    currentlength = pendulum.parse(timeincorp.data[0]['start_date'].to_json())
     return currentlength.diff_for_humans()
 
 
@@ -160,7 +159,7 @@ def killstats(id):
         ''' FUCKING PANIC ON EVERY ERROR JESUS ZKILL '''
         return ' no reliable killboard data'
 
-    return "{} kills and {} losses".format(kills, losses)
+    return "{:,} kills and {:,} losses".format(kills, losses)
 
 
 def corpstats(id):
@@ -181,4 +180,4 @@ def corpstats(id):
         ''' FUCKING PANIC ON EVERY ERROR JESUS ZKILL '''
         return ' no reliable killboard data'
 
-    return "{} kills and {} losses".format(kills, losses)
+    return "{:,} kills and {:,} losses".format(kills, losses)
