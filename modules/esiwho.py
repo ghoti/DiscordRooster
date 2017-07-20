@@ -17,12 +17,12 @@ def who(esi_app, esi_client, toon=None):
 
     if 'character' in char_id.data:
         charid = char_id.data['character']
-        name, corpid, allianceid, sec_status, age = character_sheet(esi_app, esi_client, charid)
+        name, corpid, sec_status, age = character_sheet(esi_app, esi_client, charid)
         timeincorp = time_in_corp(esi_app, esi_client, charid, corpid)
         last_active = activity(charid)
         activitystring = killstats(charid)
         corpinfo = esi_app.op['get_corporations_corporation_id'](corporation_id=corpid)
-        corpname = esi_client.request(corpinfo).data['corporation_name']
+        corpname, corpticker, allianceid, corpmembers, corpage  = corp_sheet(esi_app, esi_client, corpid)
         if allianceid:
             allianceinfo = esi_app.op['get_alliances_alliance_id'](alliance_id=allianceid)
             alliancename = esi_client.request(allianceinfo).data['alliance_name']
@@ -74,13 +74,9 @@ def character_sheet(esi_app, esi_client, charid):
     char_info = esi_client.request(esiinfo).data
     name = char_info['name']
     corp = char_info['corporation_id']
-    try:
-        alliance = char_info['alliance_id']
-    except KeyError:
-        alliance = None
     sec_status = float('%.2f' % char_info['security_status'])
     age = pendulum.parse(char_info['birthday'].to_json()).diff_for_humans()
-    return name, corp, alliance, sec_status, age
+    return name, corp, sec_status, age
 
 
 def time_in_corp(esi_app, esi_client, charid, corpid):
@@ -181,3 +177,8 @@ def corpstats(id):
         return ' no reliable killboard data'
 
     return "{:,} kills and {:,} losses".format(kills, losses)
+
+if __name__ == '__main__':
+    esi_app = App.create('https://esi.tech.ccp.is/latest/swagger.json?datasource=tranquility')
+    esi_client = EsiClient()
+    print(who(esi_app, esi_client, 'exonfang').description)
