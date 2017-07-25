@@ -23,6 +23,7 @@ import modules.esiwho
 import modules.fweight
 import modules.insurance
 import modules.ly
+import modules.newweather
 import modules.time
 import modules.weather
 import modules.who
@@ -104,15 +105,18 @@ async def on_message(message):
             pass
 
 
-@bot.command(description="Get's the current weather as a city, or in CCP's office if none provided", )
-async def weather(*city: str):
+@bot.command(description='New weather!', pass_context=True)
+async def weather(ctx, *city: str):
     '''
-    Get the weather in a specified city, or nearest weather station
+    Get the weather at a specified city, or at ccp's home office if none provided.
     '''
-    logging.info('Caught weather')
+    bot.send_typing(destination=ctx.message.channel)
     city = ' '.join(city)
-    weather = modules.weather.weather(city)
-    await bot.say(weather)
+    weather = modules.newweather.weather(city)
+    if type(weather) is discord.Embed:
+        await bot.send_message(ctx.message.channel, embed=weather)
+    else:
+        await bot.say(weather)
 
 
 @bot.command(description="Get's the current EVE Time")
