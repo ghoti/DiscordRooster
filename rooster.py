@@ -110,7 +110,7 @@ async def weather(ctx, *city: str):
     '''
     Get the weather at a specified city, or at ccp's home office if none provided.
     '''
-    bot.send_typing(destination=ctx.message.channel)
+    await bot.send_typing(destination=ctx.message.channel)
     city = ' '.join(city)
     weather = modules.newweather.weather(city)
     if type(weather) is discord.Embed:

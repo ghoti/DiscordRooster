@@ -5,11 +5,12 @@ Requires python 3.4 (with modifications beyond the scope of this document) or 3.
 Also requires:
 
 * evelink
-* arrow
+* arrow (soon to be pendulum)
 * requests
 * discord.py
 * fuzzywuzzy
-* pyowm
+* darkskylib
+* googlemaps
 
 Optional map features require installation of sqlite3 and python-sqlite as well as a copy of the SDE available [here] (https://www.fuzzwork.co.uk/dump/sqlite-latest.sqlite.bz2)
 
