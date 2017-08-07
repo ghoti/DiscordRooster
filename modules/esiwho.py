@@ -101,7 +101,10 @@ def corp_sheet(esi_app, esi_client, corpid):
     name = corp_info['corporation_name']
     ticker = corp_info['ticker']
     members = corp_info['member_count']
-    age = pendulum.parse(corp_info['creation_date'].to_json()).diff_for_humans()
+    try:
+        age = pendulum.parse(corp_info['creation_date'].to_json()).diff_for_humans()
+    except KeyError:
+        age = pendulum.create(year=2003, month=5, day=6).diff_for_humans()
     try:
         allianceid = corp_info['alliance_id']
     except KeyError:
@@ -181,4 +184,4 @@ def corpstats(id):
 if __name__ == '__main__':
     esi_app = App.create('https://esi.tech.ccp.is/latest/swagger.json?datasource=tranquility')
     esi_client = EsiClient()
-    print(who(esi_app, esi_client, 'exonfang').description)
+    print(who(esi_app, esi_client, 'paul tsukaya').description)

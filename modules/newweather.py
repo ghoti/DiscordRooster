@@ -25,9 +25,9 @@ def weather(city=None):
         embed.set_thumbnail(url=condition)
         embed.title = address[0]['formatted_address']
         embed.url = "https://darksky.net/forecast/{},{},".format(lat, lng)
-        #embed.set_footer(text='Powered by Dark Sky', icon_url='https://darksky.net/images/darkskylogo.png')
+        # embed.set_footer(text='Powered by Dark Sky', icon_url='https://darksky.net/images/darkskylogo.png')
         embed.description = fore.daily.summary
-        #embed.add_field(name='Daily Summary:', value=fore.daily.summary)
+        # embed.add_field(name='Daily Summary:', value=fore.daily.summary)
         embed.add_field(name='Current Conditions:', value='{}\n{}F/{:.1f}C (feels like {}F/{:.1f}C) at {}% Humidity'.format(
             fore.currently.summary, fore.currently.temperature, (fore.currently.temperature-32)*(5/9),
             fore.currently.apparentTemperature, (fore.currently.apparentTemperature-32)*(5/9), int(fore.currently.humidity*100)))
