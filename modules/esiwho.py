@@ -14,9 +14,12 @@ def who(esi_app, esi_client, toon=None):
     character = esi_app.op['get_search'](categories=['character', 'corporation'], search=toon, strict=True)
 
     char_id = esi_client.request(character)
-
     if 'character' in char_id.data:
-        charid = char_id.data['character']
+        #if somehow multiple charactes come back, pick the first.  could be the one you want, could be not.  who knows.
+        if len(char_id.data['character']) > 1:
+            charid = char_id.data['character'][0]
+        else:
+            charid = char_id.data['character']
         name, corpid, sec_status, age = character_sheet(esi_app, esi_client, charid)
         timeincorp = time_in_corp(esi_app, esi_client, charid, corpid)
         last_active = activity(charid)
@@ -120,7 +123,6 @@ def activity(id):
         #lastkill = arrow.get(zkill[0]['killTime'], 'YYYY-MM-DD HH:mm:ss')
         return lastkill
     except Exception as e:
-        print(e)
         return "Never"
 
 
@@ -132,7 +134,6 @@ def corpactivity(id):
         #lastkill = arrow.get(zkill[0]['killTime'], 'YYYY-MM-DD HH:mm:ss')
         return lastkill
     except Exception as e:
-        print(e)
         return "Never"
 
 
@@ -184,4 +185,5 @@ def corpstats(id):
 if __name__ == '__main__':
     esi_app = App.create('https://esi.tech.ccp.is/latest/swagger.json?datasource=tranquility')
     esi_client = EsiClient()
-    print(who(esi_app, esi_client, 'paul tsukaya').description)
+    print(who(esi_app, esi_client, 'chainsaw mcginny').description)
+    print(who(esi_app, esi_client, 'zays').description)
