@@ -12,6 +12,7 @@ import aiohttp
 import arrow
 import discord
 import requests
+import socket
 import websockets
 from discord.ext import commands
 from esipy import EsiClient, App
@@ -272,10 +273,10 @@ async def killwatch():
     # for channel in channels:
     # await bot.send_message(channel, "**KILL ALERT** is running! {:,}ISK Alliance Threshhold:{:,} Big isk Threshold <BETA>".format(VALUE, BIGVALUE))
     # aiohttp doesnt bundle certs, ubuntu doesn't like using aiohttp, shits weird and nothing sensitive is being passed
-    connector = aiohttp.TCPConnector(verify_ssl=False)
+    myconnecter = aiohttp.TCPConnector(family=socket.AF_INET, verify_ssl=False)
     while not bot.is_closed:
         try:
-            with aiohttp.ClientSession(connector=connector) as session:
+            with aiohttp.ClientSession(connector=myconnecter) as session:
                 async with session.get('https://redisq.zkillboard.com/listen.php') as resp:
                     stream = await resp.json()
         except Exception as e:
