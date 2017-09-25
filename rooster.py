@@ -281,8 +281,11 @@ async def killwatch():
                 stream = await resp.json()
         except Exception as e:
             logging.warning('Killwatch server gave up on us', e)
-            await asyncio.sleep(10)
             stream['package'] = None
+            #just in case something is funny, let's delete the session, go night night, and start over
+            del session
+            session = aiohttp.ClientSession(connector=myconnecter)
+            await asyncio.sleep(10)
         if stream['package'] and not killwatchmute:
             currentkill = kill.Kill(stream)
             if currentkill.isOldKill():
