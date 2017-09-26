@@ -54,7 +54,7 @@ def can_speak(ctx):
     return True
 
 @bot.command(pass_context=True, description="Change the MOTD of a channel")
-@commands.has_any_role("Director", "Leadership")
+@commands.has_any_role("Director")
 async def topic(ctx, *motd: str):
     '''
     Director and above only.  Set the topic for the current room.
@@ -65,7 +65,7 @@ async def topic(ctx, *motd: str):
 
 
 @bot.command(pass_context=True, description='Mute a given user')
-@commands.has_any_role("Director", "Leadership", "RetiredLeadership")
+@commands.has_any_role("Director", "OG")
 async def mute(ctx, user: discord.Member):
     '''
     Director and above only.  Place @user into a special group that cannot participate in chats.
@@ -75,7 +75,7 @@ async def mute(ctx, user: discord.Member):
 
 
 @bot.command(pass_context=True, description='Unmute a given user')
-@commands.has_any_role("Director", "Leadership", "RetiredLeadership")
+@commands.has_any_role("Director", "OG")
 async def unmute(ctx, user: discord.Member):
     '''
     Director and above only.  Unmute a @user to remove their special group and allow them to participate in chat again.
@@ -237,7 +237,7 @@ async def no(ctx):
 
 
 @bot.command(pass_context=True, description="Mute Roosters Kill announcer")
-@commands.has_any_role('Director', 'RetiredLeadership')
+@commands.has_any_role('Director', 'OG')
 async def mutekills():
     '''
     Director and above only.  Mute Roosters Killwatch function in the event of a zkill error or oppresive spam.
