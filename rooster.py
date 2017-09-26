@@ -482,7 +482,7 @@ async def myreminders(ctx):
             logging.info("{}, {}".format(item, reminders[item]))
             if ctx.message.author.id in reminders[item]:
                 timer, author, message, channel = reminders[item]
-                if channel == ctx.message.channel.id:
+                if channel.id == ctx.message.channel.id:
                     minder = minder + '{}. {}\n'.format(item, message)
         totalreminders.description = minder
         totalreminders.set_author(name=ctx.message.author)
