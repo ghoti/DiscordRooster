@@ -4,12 +4,13 @@ import logging
 import operator
 import re
 import shelve
-from datetime import timedelta
+import datetime
 from html.parser import HTMLParser
 from time import sleep
 
 import aiohttp
 import arrow
+import dateparser
 import discord
 import requests
 import socket
@@ -131,17 +132,6 @@ async def time():
     await bot.say(modules.time.time())
 
 
-#@bot.command(pass_context=True, description="info about a player.  name, age, sec status, stats, corp info, and last kb activity")
-#async def who(ctx, *toon: str):
-#    '''
-#    Basic Public info about a given EVE Character
-#    '''
-#    await bot.send_typing(destination=ctx.message.channel)
-#    logging.info('Caught !who with paramaters: {}'.format(toon))
-#    toon = ' '.join(toon)
-#    info = modules.who.who(toon)
-#    await bot.say(info)
-
 @bot.command(pass_context=True, description='Info about a character or corp if found')
 async def who(ctx, *toon: str):
     await bot.send_typing(destination=ctx.message.channel)
@@ -164,18 +154,6 @@ async def fweight(ctx, *toon: str):
     status = modules.fweight.fweight(toon)
     await bot.say(status)
 
-@bot.command(pass_context=True, description="Get number of outstanding buyback contracts")
-async def buyback(ctx):
-    await bot.send_typing(destination=ctx.message.channel)
-    status = modules.buyback.buyback()
-    await bot.say(status)
-
-@bot.command(description="Gets distance and required JDC level information for jumping between two systems")
-async def ly(*systems: str):
-    systems = ' '.join(systems)
-    status = modules.ly.ly(systems)
-    await bot.say(status)
-
 
 @bot.command(pass_context=True, description="Get Platinum insurance rate for a ship")
 async def insure(ctx, *ship: str):
@@ -187,6 +165,7 @@ async def insure(ctx, *ship: str):
     ship = ' '.join(ship)
     insurance = modules.insurance.insure(ship)
     await bot.say(insurance)
+
 
 @bot.command(pass_context=True, description="Call a vote for 30 seconds")
 async def vote(ctx, *question: str):
@@ -243,6 +222,7 @@ async def no(ctx):
             bb.voted(ctx.message.author.name)
     else:
         await bot.say("There is currently no vote in progress")
+
 
 @bot.command(pass_context=True, description="Mute Roosters Kill announcer")
 @commands.has_any_role('Director', 'RetiredLeadership')
@@ -307,6 +287,7 @@ async def killwatch():
                 continue
         #just in case we hit a rate limit while parsing a fight or something silly
         await asyncio.sleep(2)
+
 
 @bot.command(pass_context=True, description="Start a round of Trivia!")
 async def trivia(ctx):
@@ -395,6 +376,7 @@ async def trivia(ctx):
         await bot.say('!trivia for a new round!')
         gameactive = False
 
+
 @bot.command(pass_context=True, description='Give trivia stats for user')
 async def stats(ctx):
     '''
@@ -407,6 +389,116 @@ async def stats(ctx):
             ))
         else:
             await bot.say("{} Has not answered any Trivia Questions in #trivia".format(ctx.message.author.name))
+
+
+@bot.command(pass_context=True, description='Remind user <message> in <time given>')
+async def remind(ctx, *reminder):
+    '''
+    Usage: !remind [time] - [message]
+    Can parse a lot of human readable and date specific time frames, but it's not perfect.
+    example !remind in 1 hour - tell chainsaw he is amazing, !remind 12 hours - chainsaw is still amazing
+    '''
+    if not reminder:
+        #im lazy and getting the docstring is not worth my time :colbert:
+        await bot.say("```Usage: !remind [time] - [message]\n\nCan parse a lot of human readable and date \
+                       specific time frames, but it's not perfect.\n\nExample: !remind in 1 hour - tell chainsaw he \
+                        is amazing, !remind 12 hours - chainsaw is still amazing```")
+        return
+
+    reminder = ' '.join(reminder).strip()
+    if reminder.lower().startswith('delete'):
+        item = reminder.split()[1]
+        with shelve.open('reminders') as reminders:
+            if item == 'all':
+                for i in reminders.keys():
+                    if ctx.message.author.id in reminders[i] and ctx.message.channel.id in reminders[i]:
+                        del reminders[i]
+                await bot.say("OK, all your reminders for this channel have been purged!")
+                return
+            try:
+                timer, author, message, channel = reminders[item]
+            #ignore a keyerror, if someone tries to delete something that aint there, idgaf
+            except KeyError:
+                return
+            if ctx.message.author.id == author and ctx.message.channel.id == channel:
+                del reminders[item]
+                await bot.say("OK.  I wont remind you about that any more.")
+        return
+
+    time, message = reminder.split(' - ')
+    if len(message) > 200:
+        await bot.say('Reminder too long, try again with something shorter.  Sorry.')
+        return
+
+    #the james/shlomo fix.
+    message = message.replace('@everyone', 'everyone')
+    message = message.replace('@here', 'here')
+
+    remindtime = dateparser.parse(time, settings={'TIMEZONE': 'UTC', 'PREFER_DATES_FROM': 'future'})
+    now = datetime.datetime.utcnow()
+
+    logging.info('parsed time as {}'.format(remindtime))
+    if not remindtime:
+        await bot.say('Whoops, seems you supplied an invalid time for this reminder, try something like, in 1 hour, '
+                      '1day 12hours, 2017-12-25 00:00:00, 01:00...')
+        return
+
+    #if the user enters something and we parse it as already past, assume the future - cuz you know.. remind..
+    #this gets weird with some values, i've come to the realization that it's just gonna be accepted if a user tries
+    #to put in a time in the past, that they instead get reminded in the future.  dealwithit.jpg
+    #Thanks Sergei for the help on this bit
+    if remindtime <= now:
+        logging.info('event is in the past, moving forward')
+        future = now - remindtime
+        #time time waits for no man
+        remindtime = remindtime + future + future
+
+    if remindtime > now:
+        with shelve.open('reminders') as reminders:
+            #limit reminders to 10, lets check here
+            counter = 0
+            for item in reminders.keys():
+                if ctx.message.author.id in reminders[item]:
+                    counter = counter + 1
+            if counter > 10:
+                await bot.say("Sorry, you've hit the limit of reminders (10)")
+                return
+            reminders[str(len(reminders)+1)] = [remindtime, ctx.message.author.id, message, ctx.message.channel]
+        await bot.say("Okey Dokey <@{}>, I'll remind you about that at **{}**".format(ctx.message.author.id,
+                                                                             remindtime.strftime("%Y-%m-%d %H:%M:%S")))
+        return
+
+    #this, in theory, should be unreachable.  watch me be wrong at some point.
+    else:
+        await bot.say('This is in the past, {}'.format(remindtime.strftime("%Y-%m-%d %H:%M:%S")))
+
+
+@bot.command(pass_context=True, description='Show your current reminders')
+async def myreminders(ctx):
+    with shelve.open('reminders') as reminders:
+        totalreminders = discord.Embed()
+        minder = ''
+        for item in reminders.keys():
+            logging.info("{}, {}".format(item, reminders[item]))
+            if ctx.message.author.id in reminders[item]:
+                timer, author, message, channel = reminders[item]
+                if channel == ctx.message.channel.id:
+                    minder = minder + '{}. {}\n'.format(item, message)
+        totalreminders.description = minder
+        totalreminders.set_author(name=ctx.message.author)
+    await bot.say(embed=totalreminders)
+
+
+async def remindqueue():
+    logging.info('reminder q started')
+    while True:
+        with shelve.open('reminders') as reminders:
+            for item in reminders.keys():
+                remindtime, author, message, channel = reminders[item]
+                if datetime.datetime.utcnow() > remindtime:
+                    await bot.send_message(destination=channel, content='Hey, <@{}>! {}'.format(author, message))
+                    del reminders[item]
+        await asyncio.sleep(10)
 
 
 @bot.event
@@ -440,6 +532,7 @@ while not bot.is_closed:
     try:
         logging.info('starting our tasks')
         loop.create_task(killwatch())
+        loop.create_task(remindqueue())
         loop.run_until_complete(bot.connect())
 
 
