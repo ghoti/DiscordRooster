@@ -56,6 +56,9 @@ def can_speak(ctx):
 @bot.command(pass_context=True, description="Change the MOTD of a channel")
 @commands.has_any_role("Director", "Leadership")
 async def topic(ctx, *motd: str):
+    '''
+    Director and above only.  Set the topic for the current room.
+    '''
     motd = ' '.join(motd)
     await bot.edit_channel(channel=ctx.message.channel, topic=motd)
     await bot.say('{} has changed the topic to _{}_'.format(ctx.message.author.name, motd))
@@ -64,6 +67,9 @@ async def topic(ctx, *motd: str):
 @bot.command(pass_context=True, description='Mute a given user')
 @commands.has_any_role("Director", "Leadership", "RetiredLeadership")
 async def mute(ctx, user: discord.Member):
+    '''
+    Director and above only.  Place @user into a special group that cannot participate in chats.
+    '''
     server = ctx.message.server
     await bot.add_roles(user, discord.utils.get(server.roles, name="Time-OUT"))
 
@@ -71,6 +77,9 @@ async def mute(ctx, user: discord.Member):
 @bot.command(pass_context=True, description='Unmute a given user')
 @commands.has_any_role("Director", "Leadership", "RetiredLeadership")
 async def unmute(ctx, user: discord.Member):
+    '''
+    Director and above only.  Unmute a @user to remove their special group and allow them to participate in chat again.
+    '''
     server = ctx.message.server
     await bot.remove_roles(user, discord.utils.get(server.roles, name='Time-OUT'))
 
@@ -134,6 +143,9 @@ async def time():
 
 @bot.command(pass_context=True, description='Info about a character or corp if found')
 async def who(ctx, *toon: str):
+    '''
+    Get basic, public info on a give eve character name. !who chainsaw mcginny
+    '''
     await bot.send_typing(destination=ctx.message.channel)
     toon = ' '.join(toon)
     embed = modules.esiwho.who(esi_app, esi_client, toon)
@@ -227,6 +239,10 @@ async def no(ctx):
 @bot.command(pass_context=True, description="Mute Roosters Kill announcer")
 @commands.has_any_role('Director', 'RetiredLeadership')
 async def mutekills():
+    '''
+    Director and above only.  Mute Roosters Killwatch function in the event of a zkill error or oppresive spam.
+    Call again to allow killposting from rooster.
+    '''
     global killwatchmute
     if killwatchmute:
         killwatchmute = False
@@ -291,6 +307,9 @@ async def killwatch():
 
 @bot.command(pass_context=True, description="Start a round of Trivia!")
 async def trivia(ctx):
+    '''
+    Play Trivia!  Only available in #trivia (see auth groups for more info)
+    '''
     global gameactive
     if gameactive:
         return
