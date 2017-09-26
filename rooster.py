@@ -411,7 +411,9 @@ async def remind(ctx, *reminder):
         with shelve.open('reminders') as reminders:
             if item == 'all':
                 for i in reminders.keys():
-                    if ctx.message.author.id in reminders[i] and ctx.message.channel.id in reminders[i]:
+                    remindtime, author, message, channel = reminders[i]
+                    print(author, channel)
+                    if ctx.message.author.id == author and ctx.message.channel.id == channel.id:
                         del reminders[i]
                 await bot.say("OK, all your reminders for this channel have been purged!")
                 return
@@ -420,7 +422,7 @@ async def remind(ctx, *reminder):
             #ignore a keyerror, if someone tries to delete something that aint there, idgaf
             except KeyError:
                 return
-            if ctx.message.author.id == author and ctx.message.channel.id == channel:
+            if ctx.message.author.id == author and ctx.message.channel.id == channel.id:
                 del reminders[item]
                 await bot.say("OK.  I wont remind you about that any more.")
         return
