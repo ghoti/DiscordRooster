@@ -397,6 +397,9 @@ async def remind(ctx, *reminder):
     Usage: !remind [time] - [message]
     Can parse a lot of human readable and date specific time frames, but it's not perfect.
     example !remind in 1 hour - tell chainsaw he is amazing, !remind 12 hours - chainsaw is still amazing
+
+    To delete a reminder before it occurs, call !myreminders to get the id and call !remind delete <id> or
+    !remind delete all to purge all reminders for yourself in the current channel.
     '''
     if not reminder:
         #im lazy and getting the docstring is not worth my time :colbert:
@@ -477,6 +480,11 @@ async def remind(ctx, *reminder):
 
 @bot.command(pass_context=True, description='Show your current reminders')
 async def myreminders(ctx):
+    '''
+    Shows a list of your pending reminders for the current channel.
+    To delete a reminder use !remind delete <id> shown below or !remind delete all to remove all reminders for the
+    current channel.
+    '''
     with shelve.open('reminders') as reminders:
         totalreminders = discord.Embed()
         minder = ''
