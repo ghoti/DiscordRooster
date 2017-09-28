@@ -80,6 +80,7 @@ async def unmute(ctx, user: discord.Member):
     '''
     server = ctx.message.server
     await bot.remove_roles(user, discord.utils.get(server.roles, name='Time-OUT'))
+    
 
 @bot.listen('on_reaction_add')
 async def on_reaction_add(react, user):
@@ -87,6 +88,7 @@ async def on_reaction_add(react, user):
         return
     if discord.utils.get(user.roles, name='Time-OUT'):
         await bot.remove_reaction(message=react.message, emoji=react.emoji, member=user)
+
 
 @bot.listen('on_message')
 async def on_message(message):
