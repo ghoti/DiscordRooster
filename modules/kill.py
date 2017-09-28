@@ -9,7 +9,7 @@ BIGVALUE = 20000000000
 class Kill():
     def __init__(self, rawkill):
         self.killid = rawkill['package']['killID']
-        self.killtime = arrow.get(rawkill['package']['killmail']['killTime'], 'YYYY.MM.DD HH:mm:ss')
+        self.killtime = arrow.get(rawkill['package']['killmail']['killmail_time'])#, 'YYYY-MM-DDTHH:mm:ssZ')
         self.attackers = rawkill['package']['killmail']['attackers']
         self.victim = rawkill['package']['killmail']['victim']
         self.value = rawkill['package']['zkb']['totalValue']

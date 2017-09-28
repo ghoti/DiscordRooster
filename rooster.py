@@ -35,8 +35,6 @@ from modules import kill
 ALLIANCE = 1900696668
 # ALLIANCE = 99002172
 # ALLIANCE = 1354830081
-VALUE = 500000000
-BIGVALUE = 20000000000
 global gameactive
 gameactive = False
 
@@ -278,10 +276,10 @@ async def killwatch():
         except Exception as e:
             logging.warning('Killwatch server gave up on us', e)
             stream['package'] = None
-            #just in case something is funny, let's delete the session, go night night, and start over
-            del session
-            session = aiohttp.ClientSession(connector=myconnecter)
+            #just in case something is funny, let's close the session, go night night, and start over
+            session.close()
             await asyncio.sleep(10)
+            session = aiohttp.ClientSession(connector=myconnecter)
         if stream['package'] and not killwatchmute:
             currentkill = kill.Kill(stream)
             if currentkill.isOldKill():
