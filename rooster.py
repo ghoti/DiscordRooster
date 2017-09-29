@@ -48,7 +48,8 @@ bot = commands.Bot(command_prefix='!', description='Rooster knows all...')
 
 @bot.check
 def can_speak(ctx):
-    return hasattr(ctx.message.author.roles, 'Time-OUT')
+    #if member has time out role, they cannot speak, and therefore cannot use commands.
+    return not isinstance(discord.utils.get(ctx.message.author.roles, name='Time-OUT'), discord.Role)
 
 
 @bot.command(pass_context=True, description="Change the MOTD of a channel")
