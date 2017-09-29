@@ -100,7 +100,7 @@ async def on_message(message):
 
     if re.match(FIT_PARSE, message.content):
         eft = re.search('\[(?P<SHIP>.+?), (?P<NAME>.+)]', message.content)
-        name = eft.group('NAME')
+        name = eft.group('NAME').replace('@', '')
         ship = eft.group('SHIP')
         r = requests.get(OSMIUM_URL.format(message.content), timeout=5)
         try:
@@ -111,7 +111,7 @@ async def on_message(message):
             if fit['ship']['capacitors']['local']['stable']:
                 stats += 'Cap Stable!\n'
             else:
-                cap = timedelta(milliseconds=fit['ship']['capacitors']['local']['depletion_time'])
+                cap = datetime.timedelta(milliseconds=fit['ship']['capacitors']['local']['depletion_time'])
                 stats += 'Expected cap time: {}\n'.format(cap)
             stats += 'Expected DPS/Volley: {:.2f}/{:.2f}\n'.format(fit['ship']['damage']['total']['dps'],
                                                                    fit['ship']['damage']['total']['volley'])
