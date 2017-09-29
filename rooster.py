@@ -44,12 +44,12 @@ esi_app = App.create('https://esi.tech.ccp.is/latest/swagger.json?datasource=tra
 esi_client = EsiClient()
 
 bot = commands.Bot(command_prefix='!', description='Rooster knows all...')
+
+
 @bot.check
 def can_speak(ctx):
-    for i in ctx.message.author.roles:
-        if i.name == 'Time-OUT':
-            return False
-    return True
+    return hasattr(ctx.message.author.roles, 'Time-OUT')
+
 
 @bot.command(pass_context=True, description="Change the MOTD of a channel")
 @commands.has_any_role("Director")
