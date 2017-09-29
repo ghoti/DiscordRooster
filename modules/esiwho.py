@@ -119,7 +119,7 @@ def activity(id):
     try:
         zkill = requests.get("https://zkillboard.com/api/kills/characterID/{}/".format(id), timeout=5)
         zkill = zkill.json()
-        lastkill = pendulum.parse(zkill[0]['killTime']).diff_for_humans()
+        lastkill = pendulum.parse(zkill[0]['killmail_time']).diff_for_humans()
         #lastkill = arrow.get(zkill[0]['killTime'], 'YYYY-MM-DD HH:mm:ss')
         return lastkill
     except Exception as e:
