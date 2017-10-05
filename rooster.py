@@ -503,14 +503,31 @@ async def remind(ctx, *reminder):
     else:
         await bot.say('This is in the past, {}'.format(remindtime.strftime("%Y-%m-%d %H:%M:%S")))
 
-
-@bot.command(pass_context=True, description='Show your current reminders')
+@bot.group(pass_context=True, description='Show your currend reminders')
+#@bot.command(pass_context=True, description='Show your current reminders')
 async def myreminders(ctx):
     '''
     Shows a list of your pending reminders for the current channel.
     To delete a reminder use !remind delete <id> shown below or !remind delete all to remove all reminders for the
     current channel.
     '''
+    if ctx.invoked_subcommand is None:
+        with shelve.open('reminders') as reminders:
+            totalreminders = discord.Embed()
+            minder = ''
+            for item in reminders.keys():
+                logging.info("{}, {}".format(item, reminders[item]))
+                if ctx.message.author.id in reminders[item]:
+                    timer, author, message, channel = reminders[item]
+                    if channel.id == ctx.message.channel.id:
+                        minder = minder + '{}. {}\n'.format(item, message)
+            totalreminders.description = minder
+            totalreminders.set_author(name=ctx.message.author)
+        await bot.say(embed=totalreminders)
+
+
+@myreminders.command(pass_context=True)
+async def everything(ctx):
     with shelve.open('reminders') as reminders:
         totalreminders = discord.Embed()
         minder = ''
@@ -518,11 +535,10 @@ async def myreminders(ctx):
             logging.info("{}, {}".format(item, reminders[item]))
             if ctx.message.author.id in reminders[item]:
                 timer, author, message, channel = reminders[item]
-                if channel.id == ctx.message.channel.id:
-                    minder = minder + '{}. {}\n'.format(item, message)
+                minder = minder + '{}. {}\n'.format(item, message)
         totalreminders.description = minder
         totalreminders.set_author(name=ctx.message.author)
-    await bot.say(embed=totalreminders)
+        await bot.say(embed=totalreminders)
 
 
 async def remindqueue():
