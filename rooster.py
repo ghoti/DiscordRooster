@@ -442,16 +442,16 @@ async def remind(ctx, *reminder):
                 for i in reminders.keys():
                     remindtime, author, message, channel = reminders[i]
                     print(author, channel)
-                    if ctx.message.author.id == author and ctx.message.channel.id == channel.id:
+                    if ctx.message.author.id == author:
                         del reminders[i]
-                await bot.say("OK, all your reminders for this channel have been purged!")
+                await bot.say("OK, all your reminders have been purged!")
                 return
             try:
                 timer, author, message, channel = reminders[item]
             #ignore a keyerror, if someone tries to delete something that aint there, idgaf
             except KeyError:
                 return
-            if ctx.message.author.id == author and ctx.message.channel.id == channel.id:
+            if ctx.message.author.id == author:
                 del reminders[item]
                 await bot.say("OK.  I wont remind you about that any more.")
         return
