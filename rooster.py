@@ -281,7 +281,7 @@ async def killwatch():
     while not bot.is_closed:
         try:
             async with session.get('https://redisq.zkillboard.com/listen.php') as resp:
-                stream = await resp.json()
+                stream = await resp.json(encoding='utf-8')
         except Exception as e:
             logging.warning('Killwatch server gave up on us', e)
             stream['package'] = None
