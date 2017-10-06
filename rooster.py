@@ -277,7 +277,7 @@ async def killwatch():
     # await bot.send_message(channel, "**KILL ALERT** is running! {:,}ISK Alliance Threshhold:{:,} Big isk Threshold <BETA>".format(VALUE, BIGVALUE))
     # aiohttp doesnt bundle certs, ubuntu doesn't like using aiohttp, shits weird and nothing sensitive is being passed
     myconnecter = aiohttp.TCPConnector(family=socket.AF_INET, verify_ssl=False)
-    session = aiohttp.ClientSession(connector=myconnecter)
+    session = aiohttp.ClientSession(connector=myconnecter, loop=loop)
     while not bot.is_closed:
         try:
             async with session.get('https://redisq.zkillboard.com/listen.php') as resp:
@@ -285,10 +285,7 @@ async def killwatch():
         except Exception as e:
             logging.warning('Killwatch server gave up on us', e)
             stream['package'] = None
-            #just in case something is funny, let's close the session, go night night, and start over
-            session.close()
-            await asyncio.sleep(10)
-            session = aiohttp.ClientSession(connector=myconnecter)
+            #await asyncio.sleep(10)
         if stream['package'] and not killwatchmute:
             currentkill = kill.Kill(stream)
             if currentkill.isOldKill():
